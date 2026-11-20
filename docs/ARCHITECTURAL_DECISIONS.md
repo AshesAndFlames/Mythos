@@ -43,7 +43,17 @@ Status key: **Proposed** (awaiting approval), **Accepted**, **Superseded**.
 - If a single deployment ever outgrows that, sharding to per-universe rooms is a migration (noted, not planned).
 
 ## ADR-004: Editor vs. viewer through a server-maintained `editorIds` (`'collaborator'` level)
-**Status:** Proposed. **Must be validated in the Day-1 spike.**
+**Status:** **Accepted** (2026-11-20), validated by the Phase-1 spike (`tests/mythos-roles.spec.ts`).
+
+**Spike result:** against the real worker and RecordRoom, with four accounts (owner, editor, viewer, outsider):
+- The editor co-edits the record-bound Yjs body live, and the owner sees the change.
+- The viewer reads the body, but the DO reports `canWrite: false`, so the editor is read-only.
+- The outsider's universe list does not show the universe, and the article URL renders "not found".
+- Server actions refuse: viewer create (editor access needed), outsider create ("Universe not found"), editor and outsider invites, anonymous calls (401), and invalid input.
+- Demoting the editor to viewer removes write access (in actions and in Yjs) after the `editorIds` fan-out.
+- Removing the viewer revokes read access immediately.
+
+The fallback is not needed.
 
 **Context:** `'team'` cannot tell roles within a team apart. Each schema has one `teamField` and one `collaboratorsField`.
 
@@ -166,3 +176,19 @@ Status key: **Proposed** (awaiting approval), **Accepted**, **Superseded**.
 **Consequences:**
 - The template already ships the chat surface (`src/components/chat/ChatPanel.tsx`).
 - Do **not** run `npx deepspace add ai-chat`, which would install a second, divergent panel.
+
+## ADR-016: SDK conventions found in the RecordRoom source
+**Status:** **Accepted** (2026-11-20)
+
+**Context:** Reading `deepspace/dist/worker.js` (SDK 0.44.2) showed four behaviours the original schema design got wrong.
+
+**Decisions:**
+1. **`team_members` columns are `TeamId`, `UserId`, `Status`.** The DO's membership resubscribe reads those exact keys, so camelCase names silently break live membership updates.
+2. **Universes carry an explicit `teamId` column** (= their own recordId) as `teamField`. `teamField: '_rowId'` works for queries but fails per-record checks (broadcasts and Yjs), because `record.data._rowId` is undefined.
+3. **Universe-owned rows are created by the system identity** (`env.OWNER_USER_ID`, via `mythosAction`'s `system` tools), never as the caller. A `'team'` read also admits `_created_by = userId`, so a removed member would otherwise keep reading the rows they created.
+4. **Queries that may exceed one page follow `nextOffset`** (`queryAll` in `src/server/mythos/store.ts`). The tools API accepts `offset` even though the `ActionTools` type does not declare it.
+
+**Consequences:**
+- The schema names differ from the rest of the camelCase model. This is deliberate and commented in `mythos-schemas.ts`.
+- `createActionTools` lives in `src/server/action-tools.ts`, so actions can build system tools.
+- Recheck these four points on every SDK upgrade (`deepspace app update`).

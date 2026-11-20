@@ -5,8 +5,8 @@ import { captureConsoleErrors } from './helpers/errors'
  * Smoke tests covering both page kinds this template ships:
  *   - '/'      → the static landing (top level of src/pages/): no providers,
  *                so no auth fetch and no records WebSocket on load.
- *   - '/home'  → a dynamic page (under src/pages/(app)/): the providers mount,
- *                the nav shell renders, and the records WebSocket connects.
+ *   - app pages → under src/pages/(app)/, gated by <AuthGate>: signed-out
+ *                visitors see the sign-in panel and open no records socket.
  *
  * The "static contract" test is the guardrail for the per-page opt-out: if
  * someone moves the providers back up into _app.tsx, it fails.
@@ -52,15 +52,19 @@ test.describe('Smoke tests', () => {
     expect(offenders).toEqual([])
   })
 
-  test('dynamic app boundary mounts on /home', async ({ page }) => {
-    await page.goto('/home')
-    await expect(page.getByTestId('app-navigation')).toBeVisible({ timeout: 15000 })
-  })
-
-  test('sign-in button visible when logged out', async ({ page }) => {
-    await page.goto('/home')
-    await expect(page.getByTestId('nav-sign-in-button')).toBeVisible({ timeout: 15000 })
-    await expect(page.getByTestId('nav-user-name')).toHaveCount(0)
+  // Mythos is fully private (ADR-010): signed-out visitors to any app page get
+  // the sign-in panel, and no records socket is opened for them.
+  test('app pages ask signed-out visitors to sign in', async ({ page }) => {
+    const sockets: string[] = []
+    page.on('websocket', (ws) => {
+      if (new URL(ws.url()).pathname.startsWith('/ws/')) sockets.push(ws.url())
+    })
+    await page.goto('/universes')
+    await expect(page.getByRole('heading', { name: 'Sign in to continue' })).toBeVisible({ timeout: 15000 })
+    await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible()
+    await expect(page.getByTestId('app-navigation')).toHaveCount(0)
+    await page.waitForTimeout(1500)
+    expect(sockets).toEqual([])
   })
 
   test('unknown route shows 404', async ({ page }) => {

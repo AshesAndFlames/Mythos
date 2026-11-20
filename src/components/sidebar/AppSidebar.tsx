@@ -23,6 +23,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { AuthOverlay, useAuthProfileReady, signOut } from 'deepspace'
 import {
   Box,
+  Globe2,
   ChevronDown,
   Home,
   LogIn,
@@ -55,6 +56,7 @@ import {
 /** Icon per nav route; keeps nav.ts as plain data (feature-added entries get the fallback). */
 const NAV_ICONS: Record<string, LucideIcon> = {
   '/home': Home,
+  '/universes': Globe2,
   '/settings': Settings,
 }
 

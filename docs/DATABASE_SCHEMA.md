@@ -37,7 +37,7 @@ ai-chats / ai-messages (drop-in, owner-only)
 ```
 
 - Every universe-owned row carries `universeId`, which the DO uses as `teamField`.
-- `team_members.teamId` = `universes.recordId`.
+- `team_members.TeamId` = `universes.teamId` = `universes.recordId` (ADR-016).
 
 ## 2. Permission building blocks
 
@@ -73,30 +73,30 @@ Keep `BASE_USERS_SCHEMA` / `USERS_COLUMNS` unchanged, with `member: { read: 'own
 | `ownerId` | T plain | Imm | Creator |
 | `editorIds` | T json | | Server-maintained: owner + editors |
 
-- `teamField: '_rowId'` (the universe's own id is its team id; the official taskspace pattern).
+- `teamId` column (T plain, Req, Imm) holds the universe's own recordId, and is the `teamField`. `_rowId` is not used: per-record checks (broadcasts, Yjs) read `record.data[teamField]`, which is undefined for `_rowId` (ADR-016).
 - `collaboratorsField: 'editorIds'`, `ownerField: 'ownerId'`.
 
 ```ts
 permissions: {
-  member: { read: 'team', create: false, update: 'collaborator', delete: false,
-            writableFields: ['name','tagline','description','artStyle','coverImageKey'] },
+  member: { read: 'team', create: false, update: false, delete: false },
   admin:  { read: true, create: true, update: true, delete: true },
 }
 ```
 
-Editors may edit universe settings under this rule. To make settings owner-only, set `update: false` and route edits through `updateUniverse`. **Recommended:** owner-only via the action, which matches PRODUCT_SPEC F5.
+Universe settings are owner-only and go through the `updateUniverse` action (PRODUCT_SPEC F5).
 
 ### 3.3 `team_members` (name required by the SDK)
 
 | Column | Type | Flags | Notes |
 |---|---|---|---|
-| `teamId` | T plain | Req, Imm | = universeId |
-| `userId` | T plain | Req, Imm | Member's user id |
+| `TeamId` | T plain | Req, Imm | = universeId |
+| `UserId` | T plain | Req, Imm | Member's user id |
+| `Status` | T select `active,removed` | Req | The DO counts `active` (or null) as a member |
 | `role` | T select `owner,editor,viewer` | Req | |
-| `status` | T select `active,removed` | Req | The DO counts `active` (or null) as a member |
 | `invitedBy` | T plain | Imm | Audit |
 
-- `teamField: 'teamId'`, `uniqueOn: ['teamId','userId']`.
+- `teamField: 'TeamId'`, `uniqueOn: ['TeamId','UserId']`.
+- The capitalised names are required: the DO's membership resubscribe reads `record.data.UserId` / `TeamId` / `Status` literally (ADR-016).
 
 ```ts
 permissions: {
@@ -232,7 +232,7 @@ These are the drop-in `AI_CHATS_SCHEMA` / `AI_MESSAGES_SCHEMA`, unchanged: owner
 The DO filters in SQLite. Typical client queries:
 - `useQuery('articles', { where: { universeId } })`: the whole universe index, live. This is fine up to about 1k articles; paginate later.
 - `useQuery('article_links', { where: { fromArticleId } })` and `{ where: { toArticleId } }`: outgoing links and backlinks.
-- `useQuery('team_members', { where: { teamId } })` and `{ where: { userId: me } }` for "my universes".
+- `useQuery('team_members', { where: { TeamId } })` and `{ where: { UserId: me } }` for "my universes".
 
 ## 6. Schema change policy
 

@@ -18,7 +18,8 @@
 
 import { Suspense, useCallback, useState, type ReactNode } from 'react'
 import { Outlet } from 'react-router-dom'
-import { DeepSpaceAuthProvider, useAuthStatus } from 'deepspace'
+import { AuthGate, DeepSpaceAuthProvider, useAuthStatus } from 'deepspace'
+import { SignedOutPanel } from '@/components/auth/SignedOutPanel'
 import { RecordProvider, RecordScope, AgentTools } from 'deepspace'
 import { AppSidebar, SidebarMobileHeader } from '../../components/sidebar/AppSidebar'
 import { ChatDock } from '../../components/shell/ChatDock'
@@ -35,6 +36,15 @@ export default function AppLayout() {
       {/* The prerendered landing owns the document <title> and React drops it
           when <Seo> unmounts, so every route without <Seo> sets its own. */}
       <title>{APP_NAME}</title>
+      {/* Mythos is fully private (ADR-010): the whole app shell requires
+          sign-in, and the worker refuses token-less sockets to match. */}
+      <AuthGate
+        fallback={
+          <div className="min-h-screen bg-background">
+            <SignedOutPanel />
+          </div>
+        }
+      >
       <AuthBoot>
         <div className="flex h-screen overflow-hidden bg-shell">
           <AppSidebar mobileOpen={mobileNavOpen} onMobileClose={closeMobileNav} />
@@ -59,6 +69,7 @@ export default function AppLayout() {
           </div>
         </div>
       </AuthBoot>
+      </AuthGate>
     </DeepSpaceAuthProvider>
   )
 }
@@ -86,7 +97,6 @@ function AuthBoot({ children }: { children: ReactNode }) {
 
   return (
     <RecordProvider
-      allowAnonymous
       onWriteError={(e) =>
         e.kind === 'permission' ? warning(e.title, e.detail) : error(e.title, e.detail)
       }

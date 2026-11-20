@@ -16,26 +16,26 @@ function jwtConfig(env: Env): JwtVerifierConfig {
   return { publicKey: env.AUTH_JWT_PUBLIC_KEY, issuer: env.AUTH_JWT_ISSUER }
 }
 
+/**
+ * Mythos is fully private (ADR-010): every WebSocket requires a verified JWT.
+ * `<AuthGate>` only hides UI; this is the server boundary for sockets.
+ */
 function wsRoute(
   doNamespace: (env: Env) => DurableObjectNamespace,
   extraIdentity?: (auth: VerifyResult, env: Env) => { role?: string } | Promise<{ role?: string }>,
+  allowRoom?: (id: string, env: Env) => boolean,
 ) {
   return async (c: Context<AppContext>) => {
     const id = c.req.param('roomId') ?? c.req.param('docId') ?? c.req.param('scopeId')
     if (!id) return new Response('Not found', { status: 404 })
+    if (allowRoom && !allowRoom(id, c.env)) return new Response('Not found', { status: 404 })
     const url = new URL(c.req.url)
     const token = url.searchParams.get('token')
+    if (!token) return new Response('Unauthorized', { status: 401 })
 
-    let auth: VerifyResult | null = null
-    if (token) {
-      auth = (await verifyJwt(jwtConfig(c.env), token)).result
-      if (!auth) return new Response('Unauthorized', { status: 401 })
-    }
-    const roomRequest = authenticatedRoomRequest(
-      c.req.raw,
-      auth,
-      auth ? await extraIdentity?.(auth, c.env) : undefined,
-    )
+    const auth: VerifyResult | null = (await verifyJwt(jwtConfig(c.env), token)).result
+    if (!auth) return new Response('Unauthorized', { status: 401 })
+    const roomRequest = authenticatedRoomRequest(c.req.raw, auth, await extraIdentity?.(auth, c.env))
 
     const namespace = doNamespace(c.env)
     const stub = namespace.get(namespace.idFromName(id))
@@ -121,9 +121,15 @@ async function resolveDocsYjsRole(
 }
 
 export function registerRealtimeRoutes(app: Hono<AppContext>): void {
+  // All Mythos data lives in the app's one record room (ADR-003). Refusing any
+  // other room id stops clients from minting stray rooms with their own data.
   app.get(
     '/ws/:roomId',
-    wsRoute((env) => env.RECORD_ROOMS),
+    wsRoute(
+      (env) => env.RECORD_ROOMS,
+      undefined,
+      (id, env) => id === `app:${env.DEEPSPACE_APP_ID}`,
+    ),
   )
 
   app.get('/ws/yjs/:docId', async (c) => {
