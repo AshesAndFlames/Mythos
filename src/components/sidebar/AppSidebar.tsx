@@ -38,6 +38,7 @@ import type { Role } from '../../constants'
 import { nav } from '../../nav'
 import { cn } from '../../lib/utils'
 import { ThemeToggle } from '../shell/ThemeToggle'
+import { useToast } from '../ui'
 import {
   Avatar,
   AvatarFallback,
@@ -98,6 +99,7 @@ export function AppSidebar({ mobileOpen, onMobileClose }: AppSidebarProps) {
 
   const [collapsed, setCollapsed] = useState(readCollapsed)
   const [showAuthModal, setShowAuthModal] = useState(false)
+  const toast = useToast()
 
   const profileReady = !isSignedIn || (!userLoading && !!user)
   const userRole = (user?.role ?? 'anonymous') as Role | 'anonymous'
@@ -178,11 +180,11 @@ export function AppSidebar({ mobileOpen, onMobileClose }: AppSidebarProps) {
               aria-label={labelsHidden ? 'Expand sidebar' : `${APP_NAME} landing page`}
               className="flex min-w-0 items-center gap-[10px] rounded-md px-[2px]"
             >
-              <span className="flex size-[26px] flex-none items-center justify-center rounded-lg bg-primary text-xs font-bold text-primary-foreground">
+              <span className="flex size-[26px] flex-none items-center justify-center rounded-full border border-primary/50 font-display text-base font-semibold text-primary">
                 {APP_NAME.charAt(0).toUpperCase()}
               </span>
               <span
-                className="truncate text-sm font-semibold text-foreground transition-opacity duration-150"
+                className="truncate font-display text-lg font-semibold text-foreground transition-opacity duration-150"
                 style={{ opacity: labelsHidden ? 0 : 1 }}
               >
                 {APP_NAME}
@@ -286,7 +288,14 @@ export function AppSidebar({ mobileOpen, onMobileClose }: AppSidebarProps) {
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => signOut()}>
+              <DropdownMenuItem
+                onClick={() => {
+                  signOut().catch((err: unknown) => {
+                    console.error('[sign out] failed:', err)
+                    toast.error('Could not sign out. Check your connection and try again.')
+                  })
+                }}
+              >
                 <LogOut aria-hidden />
                 Sign out
               </DropdownMenuItem>

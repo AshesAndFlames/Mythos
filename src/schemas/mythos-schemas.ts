@@ -126,14 +126,10 @@ export const categoriesSchema: CollectionSchema = {
  * Fields an editor may change directly on an article (the Yjs body is
  * separate). Each is plain text bounded by `maxLength` or a select the DO
  * validates. `title` (slug uniqueness), `categoryId` (same-universe check),
- * `infobox` (JSON, needs Zod) and tags change through actions.
+ * `infobox` (JSON, needs Zod), `coverImageKey` (key pattern) and tags change
+ * through actions (`saveArticle` covers them all).
  */
-export const ARTICLE_CLIENT_WRITABLE_FIELDS = [
-  'summary',
-  'type',
-  'status',
-  'coverImageKey',
-] as const
+export const ARTICLE_CLIENT_WRITABLE_FIELDS = ['summary', 'type', 'status'] as const
 
 export const articlesSchema: CollectionSchema = {
   name: COLLECTIONS.articles,

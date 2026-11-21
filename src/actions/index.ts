@@ -4,6 +4,7 @@ import {
   createArticle,
   deleteArticle,
   renameArticle,
+  saveArticle,
   setArticleCategory,
   setArticleInfobox,
 } from './articles'
@@ -31,6 +32,7 @@ export const actions: Record<string, ActionHandler<Env>> = {
   // Articles (editor)
   createArticle,
   renameArticle,
+  saveArticle,
   setArticleCategory,
   setArticleInfobox,
   deleteArticle,

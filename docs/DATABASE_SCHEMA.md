@@ -52,7 +52,7 @@ ai-chats / ai-messages (drop-in, owner-only)
 | `collaboratorsField: 'editorIds'` + `update: 'collaborator'` | **Editor vs. viewer.** Only the owner and editors can update fields or type in the Yjs body |
 | `ownerField: 'ownerId'` (universe owner) | The owner always passes `'collaborator'` |
 | `create: false` for `member` | Rows are created only by server actions that check the universe role (`create` is boolean-only and cannot check the team) |
-| `writableFields` | Articles: clients may change only `summary`, `type`, `status`, `coverImageKey`. Everything that references another record, must stay unique, or is JSON goes through an action |
+| `writableFields` | Articles: clients may change only `summary`, `type`, `status`. Everything that references another record, must stay unique, is JSON, or must match a pattern (`coverImageKey`) goes through an action (`saveArticle` covers them all) |
 | `maxLength` | Every plain-text column. JSON columns cannot take it (the DO rejects non-strings), so they are action-only and Zod-bounded |
 | `uniqueOn` | Uniqueness of slugs, memberships, links and usage counters, enforced in the DO |
 
@@ -75,7 +75,7 @@ Keep `BASE_USERS_SCHEMA` / `USERS_COLUMNS` unchanged, with `member: { read: 'own
 | `tagline` | T plain | | ≤ 200 |
 | `description` | T plain | | ≤ 5,000 |
 | `artStyle` | T plain | | ≤ 300; image prompt suffix |
-| `coverImageKey` | T plain | | R2 key |
+| `coverImageKey` | T plain | | `''` or `covers/<uuid>.<ext>` in the app file store (ADR-019) |
 | `visibility` | T select `private` | default `private` | Only `private` today (ADR-017) |
 | `ownerId` | T plain | Imm | Creator |
 | `editorIds` | T json | | Server-maintained: owner + editors |
@@ -135,11 +135,11 @@ Removal **deletes** the row (rather than setting `removed`). Re-inviting then wo
 | `slug` | T plain | Req | Derived from the title; unique per universe |
 | `type` | T select `character,location,faction,event,species,item,lore,culture,other` | Req | |
 | `summary` | T plain | | ≤ 1,000; used by search and AI context |
-| `body` | (Yjs field) | | Not a column. `useYjsField('articles', id, 'body')` persists it in the RecordRoom |
+| `body` | (Yjs field) | | Not a column. `useYjsField('articles', id, 'body')` persists it in the RecordRoom; Tiptap binds the `Y.XmlFragment` named `body` (ADR-019) |
 | `infobox` | T json | | `Array<{ key: string; value: string }>`, ≤ 30 entries. Written only by `setArticleInfobox` |
-| `categoryId` | T plain | | '' or a category in the same universe. Written only by `setArticleCategory` |
+| `categoryId` | T plain | | '' or a category in the same universe. Written only by `setArticleCategory` / `saveArticle` |
 | `status` | T select `draft,published` | Req, default `draft` | Within-universe label in MVP |
-| `coverImageKey` | T plain | | |
+| `coverImageKey` | T plain | | `''` or `covers/<uuid>.<ext>`. Written only by `saveArticle` (ADR-019) |
 | `editorIds` | T json | | Server-maintained |
 | `ownerId` | T plain | Imm | = universe owner |
 | `authorId` | T plain | Imm | The editor who created it (display) |
@@ -149,7 +149,7 @@ Removal **deletes** the row (rather than setting `removed`). Re-inviting then wo
 ```ts
 permissions: {
   member: { read: 'team', create: false, update: 'collaborator', delete: false,
-            writableFields: ['summary','type','status','coverImageKey'] },
+            writableFields: ['summary','type','status'] },
   admin:  { read: true, create: true, update: true, delete: true },
 }
 ```

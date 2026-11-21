@@ -11,8 +11,11 @@ import {
   createArticleSchema,
   renameArticleSchema,
   setArticleCategorySchema,
+  saveArticleSchema,
   setArticleInfoboxSchema,
 } from '../server/mythos/validation'
+import { recordRevision } from './revisions'
+import { applyArticleTags } from './tags'
 
 async function takenSlugs(tools: ActionTools, universeId: string, exceptId?: string) {
   const articles = await queryAll<Pick<ArticleData, 'slug'>>(tools, COLLECTIONS.articles, {
@@ -90,6 +93,53 @@ export const setArticleCategory = mythosAction(
       'Setting the category',
     )
     return { articleId: article.recordId, categoryId: params.categoryId }
+  },
+)
+
+/**
+ * Saves an article from the editor in one validated request (editor or
+ * owner): title (and slug), type, summary, status, category, cover, tags,
+ * and a version of the body when it changed. "Save draft" and "Publish" are
+ * this action with `status` set accordingly.
+ */
+export const saveArticle = mythosAction(
+  'saveArticle',
+  saveArticleSchema,
+  async ({ userId, params, tools, system }) => {
+    const { article } = await requireArticle(tools, userId, params.articleId, 'editor')
+    const universeId = article.data.universeId
+    const articleId = article.recordId
+
+    if (params.categoryId) {
+      const category = await getRecord<CategoryData>(tools, COLLECTIONS.categories, params.categoryId)
+      if (!category || category.data.universeId !== universeId) throw new UserError('Category not found')
+    }
+
+    const patch: Partial<ArticleData> = {
+      type: params.type,
+      summary: params.summary,
+      status: params.status,
+      categoryId: params.categoryId,
+      coverImageKey: params.coverImageKey,
+    }
+    let slug = article.data.slug
+    if (params.title !== article.data.title) {
+      slug = uniqueSlug(slugify(params.title), await takenSlugs(tools, universeId, articleId))
+      patch.title = params.title
+      patch.slug = slug
+    }
+    await mustSucceed(system.update(COLLECTIONS.articles, articleId, patch), 'Saving the article')
+    await applyArticleTags(tools, system, universeId, articleId, params.tags)
+    const revision = await recordRevision(
+      tools,
+      system,
+      userId,
+      articleId,
+      { universeId, title: params.title, summary: params.summary },
+      params.content,
+      params.note || (params.status === 'published' ? 'Published' : 'Draft saved'),
+    )
+    return { articleId, slug, status: params.status, revision }
   },
 )
 

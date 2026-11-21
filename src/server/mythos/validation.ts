@@ -7,13 +7,21 @@
 
 import { z } from 'zod'
 import {
+  ARTICLE_STATUSES,
   ARTICLE_TYPES,
+  COVER_KEY_PATTERN,
   ASSIGNABLE_ROLES,
   LIMITS,
   LINK_TYPES,
   UNIVERSE_VISIBILITIES,
 } from '../../domain/mythos'
 import { richTextDocSchema } from './richtext'
+
+/** '' (no cover) or a key Mythos generated: `covers/<uuid>.<ext>`. */
+export const coverKeySchema = z.union([
+  z.literal(''),
+  z.string().regex(COVER_KEY_PATTERN, 'Invalid cover image'),
+])
 
 /** Record ids: UUIDs or SDK-generated ids. Never free text. */
 export const recordIdSchema = z
@@ -97,7 +105,7 @@ export const setArticleInfoboxSchema = z.object({
 // ── Universe settings ─────────────────────────────────────────────────────
 
 export const updateUniverseSettingsSchema = updateUniverseSchema
-  .extend({ visibility: z.enum(UNIVERSE_VISIBILITIES).optional() })
+  .extend({ visibility: z.enum(UNIVERSE_VISIBILITIES).optional(), coverImageKey: coverKeySchema.optional() })
   .refine(
     (v) => Object.keys(v).some((k) => k !== 'universeId'),
     'Nothing to update',
@@ -167,6 +175,23 @@ export const saveRevisionSchema = z.object({
 })
 
 export const revisionIdSchema = z.object({ revisionId: recordIdSchema })
+
+// ── Whole-article save (editor "Save draft" / "Publish") ──────────────────
+
+export const saveArticleSchema = z.object({
+  articleId: recordIdSchema,
+  title: requiredText(LIMITS.articleTitle, 'Title'),
+  type: z.enum(ARTICLE_TYPES),
+  summary: trimmed(LIMITS.articleSummary, 'Summary'),
+  status: z.enum(ARTICLE_STATUSES),
+  categoryId: optionalId,
+  tags: z.array(tagName).max(LIMITS.tags, `At most ${LIMITS.tags} tags per article`),
+  coverImageKey: coverKeySchema,
+  /** The editor's body snapshot; becomes a saved version when it differs. */
+  content: richTextDocSchema,
+  note: trimmed(LIMITS.revisionNote, 'Note').optional().default(''),
+})
+export type SaveArticleInput = z.input<typeof saveArticleSchema>
 
 /** Formats the first Zod issue as a user-facing sentence. */
 export function firstIssue(error: z.ZodError): string {

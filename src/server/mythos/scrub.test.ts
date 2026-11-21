@@ -66,3 +66,52 @@ describe('erasing a Yjs body removes its content from stored state', () => {
     expect(contains(Y.encodeStateAsUpdate(room), SECRET)).toBe(false)
   })
 })
+
+/**
+ * The rich-text body (Tiptap) is a Y.XmlFragment named `body`. The room never
+ * instantiates that root type itself, so when the erase tool calls
+ * `doc.getText('body')` on a doc loaded from storage, Yjs adopts the existing
+ * root as a Y.Text over the same items. Deleting its whole length deletes
+ * every top-level element, and deleting an element deletes its children.
+ */
+describe('erasing a rich-text (XmlFragment) body through the text tool', () => {
+  function richClient(paragraphs: string[]): Y.Doc {
+    const doc = new Y.Doc()
+    const fragment = doc.getXmlFragment('body')
+    fragment.insert(
+      0,
+      paragraphs.map((text) => {
+        const p = new Y.XmlElement('paragraph')
+        p.insert(0, [new Y.XmlText(text)])
+        return p
+      }),
+    )
+    return doc
+  }
+
+  it('removes nested content from the stored state and empties every client', () => {
+    const client = richClient(['The heir is hidden', 'in Silverhold'])
+    const stored = Y.encodeStateAsUpdate(client)
+    expect(contains(stored, 'Silverhold')).toBe(true)
+
+    // The room loads the stored doc and runs yjs.setText('body', '').
+    const room = new Y.Doc()
+    Y.applyUpdate(room, stored)
+    const text = room.getText('body')
+    let update: Uint8Array | null = null
+    room.on('update', (u: Uint8Array) => {
+      update = u
+    })
+    room.transact(() => text.delete(0, text.length))
+
+    const after = Y.encodeStateAsUpdate(room)
+    expect(contains(after, 'heir')).toBe(false)
+    expect(contains(after, 'Silverhold')).toBe(false)
+
+    // The broadcast update empties a connected editor's fragment too.
+    expect(update).not.toBeNull()
+    Y.applyUpdate(client, update as unknown as Uint8Array)
+    expect(client.getXmlFragment('body').length).toBe(0)
+    expect(client.getXmlFragment('body').toString()).toBe('')
+  })
+})

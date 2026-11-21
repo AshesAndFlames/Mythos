@@ -1,6 +1,6 @@
 /**
  * ThemeToggle — a sidebar row (icon + label) that flips between the two
- * shipped themes, `slate` (dark, default) and `paper` (light), by setting
+ * Mythos themes, `archive` (dark, default) and `vellum` (light), by setting
  * `data-theme` on <html> and persisting to localStorage['ui-theme'] — the
  * same key index.html reads pre-paint, so reloads don't flash the default.
  * Shows the mode you'd switch TO: moon while light, sun while dark.
@@ -15,8 +15,8 @@ import { Moon, Sun } from 'lucide-react'
 import type { ThemeId } from '../../themes'
 import { getActiveTheme } from '../../themes'
 
-const DARK_THEME: ThemeId = 'slate'
-const LIGHT_THEME: ThemeId = 'paper'
+const DARK_THEME: ThemeId = 'archive'
+const LIGHT_THEME: ThemeId = 'vellum'
 const STORAGE_KEY = 'ui-theme'
 
 function readTheme(): ThemeId {

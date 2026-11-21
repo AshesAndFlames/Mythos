@@ -133,7 +133,7 @@ describe('articles: protected fields', () => {
       checkFieldPermissions(
         articlesSchema,
         MEMBER,
-        { summary: 'A knight', type: 'faction', status: 'published', coverImageKey: 'k' },
+        { summary: 'A knight', type: 'faction', status: 'published' },
         existing,
       ),
     ).toBeNull()
@@ -141,7 +141,7 @@ describe('articles: protected fields', () => {
 
   // categoryId points at another record and title drives the unique slug,
   // so both change only through actions that check the universe.
-  it.each(['editorIds', 'universeId', 'ownerId', 'slug', 'authorId', 'categoryId', 'title', 'infobox'])(
+  it.each(['editorIds', 'universeId', 'ownerId', 'slug', 'authorId', 'categoryId', 'title', 'infobox', 'coverImageKey'])(
     'a client cannot change %s',
     (field) => {
       const value = field === 'editorIds' ? [OWNER, EDITOR, VIEWER] : 'forged'

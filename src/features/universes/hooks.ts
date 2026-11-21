@@ -1,5 +1,5 @@
 /**
- * Data hooks for universes, memberships and articles.
+ * Data hooks for Mythos screens.
  *
  * Everything here reads through the RecordRoom, which only ever sends rows
  * the caller may read — a universe the caller is not a member of never
@@ -10,10 +10,39 @@
 import { useMemo } from 'react'
 import { useAuth, useQuery, useUsers } from 'deepspace'
 import { COLLECTIONS, type UniverseRole } from '../../domain/mythos'
-import type { ArticleData, TeamMemberData, UniverseData } from '../../domain/records'
+import type {
+  ArticleData,
+  ArticleLinkData,
+  ArticleRevisionData,
+  ArticleTagData,
+  CategoryData,
+  TagData,
+  TeamMemberData,
+  UniverseData,
+} from '../../domain/records'
 import { isUniverseRole } from '../../server/mythos/roles'
 
 export type LoadStatus = 'loading' | 'ready' | 'error'
+
+export function combine(...statuses: LoadStatus[]): LoadStatus {
+  if (statuses.includes('error')) return 'error'
+  if (statuses.includes('loading')) return 'loading'
+  return 'ready'
+}
+
+interface Stamped {
+  id: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type UniverseView = UniverseData & Stamped & { role: UniverseRole }
+export type ArticleView = ArticleData & Stamped
+export type CategoryView = CategoryData & { id: string }
+export type LinkView = ArticleLinkData & { id: string }
+export type RevisionView = Omit<ArticleRevisionData, 'content'> & Stamped
+
+// ── Membership and universes ──────────────────────────────────────────────
 
 /** The caller's own active memberships, keyed by universe id. */
 export function useMyRoles(): { roles: Map<string, UniverseRole>; status: LoadStatus } {
@@ -37,11 +66,17 @@ export function useMyUniverses() {
     orderDir: 'desc',
   })
   const { roles, status: roleStatus } = useMyRoles()
-  const universes = useMemo(
+  const universes = useMemo<UniverseView[]>(
     () =>
       records
         .filter((u) => roles.has(u.recordId))
-        .map((u) => ({ id: u.recordId, ...u.data, role: roles.get(u.recordId) as UniverseRole })),
+        .map((u) => ({
+          ...u.data,
+          id: u.recordId,
+          createdAt: u.createdAt,
+          updatedAt: u.updatedAt,
+          role: roles.get(u.recordId) as UniverseRole,
+        })),
     [records, roles],
   )
   return { universes, status: combine(universeStatus, roleStatus) }
@@ -52,12 +87,16 @@ export function useUniverse(universeId: string) {
     where: { teamId: universeId },
   })
   const { roles, status: roleStatus } = useMyRoles()
-  const universe = records[0]
-  return {
-    universe: universe ? { id: universe.recordId, ...universe.data } : null,
-    role: roles.get(universeId) ?? null,
-    status: combine(universeStatus, roleStatus),
-  }
+  const u = records[0]
+  const role = roles.get(universeId) ?? null
+  const universe = useMemo<UniverseView | null>(
+    () =>
+      u && role
+        ? { ...u.data, id: u.recordId, createdAt: u.createdAt, updatedAt: u.updatedAt, role }
+        : null,
+    [u, role],
+  )
+  return { universe, role, status: combine(universeStatus, roleStatus) }
 }
 
 export interface MemberView {
@@ -93,24 +132,115 @@ export function useMembers(universeId: string) {
   return { members, status }
 }
 
+/** id → display name for every user the roster shows. */
+export function useUserNames(): Map<string, string> {
+  const { users } = useUsers()
+  return useMemo(() => new Map(users.map((u) => [u.id, u.name || 'Unknown'])), [users])
+}
+
+// ── Articles ──────────────────────────────────────────────────────────────
+
+function toArticle(r: { recordId: string; data: ArticleData; createdAt: string; updatedAt: string }): ArticleView {
+  return { ...r.data, id: r.recordId, createdAt: r.createdAt, updatedAt: r.updatedAt }
+}
+
 export function useArticles(universeId: string) {
   const { records, status } = useQuery<ArticleData>(COLLECTIONS.articles, {
     where: { universeId },
     orderBy: 'updatedAt',
     orderDir: 'desc',
   })
-  const articles = useMemo(() => records.map((r) => ({ id: r.recordId, ...r.data })), [records])
+  const articles = useMemo(() => records.map(toArticle), [records])
   return { articles, status }
 }
 
 export function useArticle(universeId: string, articleId: string) {
   const { articles, status } = useArticles(universeId)
   const article = useMemo(() => articles.find((a) => a.id === articleId) ?? null, [articles, articleId])
-  return { article, status }
+  return { article, articles, status }
 }
 
-function combine(a: LoadStatus, b: LoadStatus): LoadStatus {
-  if (a === 'error' || b === 'error') return 'error'
-  if (a === 'loading' || b === 'loading') return 'loading'
-  return 'ready'
+/** Articles across every universe the caller can read, most recently changed first (all of them without `limit`). */
+export function useRecentArticles(limit?: number) {
+  const { records, status } = useQuery<ArticleData>(COLLECTIONS.articles, {
+    orderBy: 'updatedAt',
+    orderDir: 'desc',
+    ...(limit ? { limit } : {}),
+  })
+  const articles = useMemo(() => records.map(toArticle), [records])
+  return { articles, status }
+}
+
+// ── Organisation ──────────────────────────────────────────────────────────
+
+export function useCategories(universeId: string) {
+  const { records, status } = useQuery<CategoryData>(COLLECTIONS.categories, { where: { universeId } })
+  const categories = useMemo<CategoryView[]>(
+    () =>
+      records
+        .map((r) => ({ ...r.data, id: r.recordId }))
+        .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
+    [records],
+  )
+  return { categories, status }
+}
+
+/** Tags of a universe, plus articleId → tag names. */
+export function useTags(universeId: string) {
+  const { records: tagRows, status: tagStatus } = useQuery<TagData>(COLLECTIONS.tags, { where: { universeId } })
+  const { records: joinRows, status: joinStatus } = useQuery<ArticleTagData>(COLLECTIONS.articleTags, {
+    where: { universeId },
+  })
+  const value = useMemo(() => {
+    const tagName = new Map(tagRows.map((t) => [t.recordId, t.data.name]))
+    const byArticle = new Map<string, string[]>()
+    for (const j of joinRows) {
+      const name = tagName.get(j.data.tagId)
+      if (!name) continue
+      const list = byArticle.get(j.data.articleId) ?? []
+      list.push(name)
+      byArticle.set(j.data.articleId, list)
+    }
+    for (const list of byArticle.values()) list.sort((a, b) => a.localeCompare(b))
+    const tags = tagRows.map((t) => ({ id: t.recordId, name: t.data.name })).sort((a, b) => a.name.localeCompare(b.name))
+    return { tags, byArticle }
+  }, [tagRows, joinRows])
+  return { ...value, status: combine(tagStatus, joinStatus) }
+}
+
+/** Every relationship in a universe. */
+export function useLinks(universeId: string) {
+  const { records, status } = useQuery<ArticleLinkData>(COLLECTIONS.articleLinks, { where: { universeId } })
+  const links = useMemo<LinkView[]>(() => records.map((r) => ({ ...r.data, id: r.recordId })), [records])
+  return { links, status }
+}
+
+// ── Activity ──────────────────────────────────────────────────────────────
+
+function toRevision(r: { recordId: string; data: ArticleRevisionData; createdAt: string; updatedAt: string }): RevisionView {
+  const { content: _content, ...rest } = r.data
+  void _content
+  return { ...rest, id: r.recordId, createdAt: r.createdAt, updatedAt: r.updatedAt }
+}
+
+/** Latest saved versions across every universe the caller can read. */
+export function useRecentRevisions(limit = 12) {
+  const { records, status } = useQuery<ArticleRevisionData>(COLLECTIONS.articleRevisions, {
+    orderBy: 'createdAt',
+    orderDir: 'desc',
+    limit,
+  })
+  const revisions = useMemo(() => records.map(toRevision), [records])
+  return { revisions, status }
+}
+
+/** Saved versions of one article, newest first. */
+export function useArticleRevisions(universeId: string, articleId: string) {
+  const { records, status } = useQuery<ArticleRevisionData>(COLLECTIONS.articleRevisions, {
+    where: { universeId, articleId },
+    orderBy: 'number',
+    orderDir: 'desc',
+  })
+  const revisions = useMemo(() => records.map(toRevision), [records])
+  return { revisions, status }
 }

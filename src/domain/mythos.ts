@@ -135,3 +135,24 @@ export const COLLECTIONS = {
   articleTags: 'article_tags',
   usage: 'usage',
 } as const
+
+/**
+ * Cover images live in the app-scope file store under keys Mythos chooses:
+ * `covers/<uuid>.<ext>`. Keys are validated against this pattern on the
+ * server (Zod) and again before rendering, so a stored value can never turn
+ * into an arbitrary URL.
+ */
+export const COVER_KEY_PATTERN = /^covers\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpe?g|webp|gif)$/
+export const COVER_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const
+export const COVER_MAX_BYTES = 5 * 1024 * 1024
+
+/**
+ * Same-origin URL for a validated cover key, or null. The file store keeps
+ * app-scope files under `apps/<appId>/` and serves them only by that full
+ * key, while Mythos stores the short key it chose.
+ */
+export function coverUrl(key: string | null | undefined, appId: string): string | null {
+  if (!key || !COVER_KEY_PATTERN.test(key) || !/^[A-Za-z0-9_-]+$/.test(appId)) return null
+  const full = `apps/${appId}/${key}`
+  return `/api/files/${full.split('/').map(encodeURIComponent).join('/')}?scope=app`
+}

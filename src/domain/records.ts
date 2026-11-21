@@ -52,7 +52,7 @@ export interface ArticleData {
   type: ArticleType
   summary: string
   infobox: InfoboxEntry[]
-  /** '' or a category in the same universe. Set only by `setArticleCategory`. */
+  /** '' or a category in the same universe. Set only by `setArticleCategory` or `saveArticle`. */
   categoryId: string
   status: ArticleStatus
   coverImageKey: string

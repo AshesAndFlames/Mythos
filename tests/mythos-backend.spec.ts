@@ -7,36 +7,15 @@
  * UI would never send — ids from the other universe, roles that are too low,
  * malformed content — and see the server refuse it.
  */
-import { existsSync, readFileSync } from 'node:fs'
-import type { APIRequestContext, Page } from '@playwright/test'
-import { test, expect, loadAllTestAccounts, type MultiplayerUser } from 'deepspace/testing'
+import { test, expect, loadAllTestAccounts } from 'deepspace/testing'
+import { caller, hexOf, storedDocHex, typeBody, type ActionResult } from './helpers/mythos'
 
 const NAMES = ['Alice', 'Bob', 'Carol', 'Dave']
 const available = new Set(loadAllTestAccounts().map((a) => a.name))
 test.skip(!NAMES.every((n) => available.has(n)), `Needs usable test accounts named ${NAMES.join(', ')}.`)
 test.setTimeout(240_000)
 
-type Result = { success?: boolean; error?: string; data?: Record<string, unknown> }
-
-async function tokenFor(page: Page): Promise<string> {
-  const res = await page.request.post('/api/auth/token', { headers: { 'Content-Type': 'application/json' } })
-  expect(res.ok()).toBeTruthy()
-  return ((await res.json()) as { token: string }).token
-}
-
-/** Signs a user in to the app (so invites can find them) and returns an action caller. */
-async function caller(user: MultiplayerUser) {
-  await user.page.goto('/universes')
-  await expect(user.page.getByRole('heading', { name: 'Your universes' })).toBeVisible({ timeout: 20_000 })
-  const token = await tokenFor(user.page)
-  return async (name: string, params: object): Promise<Result> => {
-    const res = await user.page.request.post(`/api/actions/${name}`, {
-      headers: { Authorization: `Bearer ${token}` },
-      data: params,
-    })
-    return (await res.json()) as Result
-  }
-}
+type Result = ActionResult
 
 const ok = (r: Result) => {
   expect(r.error, 'unexpected refusal').toBeUndefined()
@@ -47,46 +26,6 @@ const refused = (r: Result, message: RegExp) => {
   expect(r.success).toBe(false)
   expect(r.error).toMatch(message)
 }
-/** The app id the local worker serves (wrangler.toml is its source of truth). */
-function appId(): string {
-  const file = ['wrangler.toml', '../wrangler.toml'].find((p) => existsSync(p)) as string
-  return (/DEEPSPACE_APP_ID\s*=\s*"([^"]+)"/.exec(readFileSync(file, 'utf8')) as RegExpExecArray)[1]
-}
-
-/**
- * Reads the stored bytes of one record-bound Yjs document straight from the
- * local RecordRoom's SQLite, through wrangler's local explorer API (local dev
- * only). Returns hex, or null when no document is stored under that key.
- */
-async function storedDocHex(request: APIRequestContext, docKey: string): Promise<string | null> {
-  const api = '/cdn-cgi/local/explorer/api/workers/durable_objects/namespaces'
-  const namespaces = (await (await request.get(api)).json()) as { result: Array<{ id: string; class: string }> }
-  const ns = namespaces.result.find((n) => n.class === 'AppRecordRoom')
-  expect(ns, 'local explorer lists the record room').toBeTruthy()
-  const res = await request.post(`${api}/${ns?.id}/query`, {
-    data: {
-      durable_object_name: `app:${appId()}`,
-      queries: [{ sql: 'SELECT hex(state) FROM yjs_docs WHERE doc_key = ?', params: [docKey] }],
-    },
-  })
-  const body = (await res.json()) as { success: boolean; result: Array<{ rows: string[][] }> }
-  expect(body.success, 'explorer query succeeded').toBe(true)
-  return body.result[0]?.rows[0]?.[0] ?? null
-}
-const hexOf = (text: string) => Buffer.from(text, 'utf8').toString('hex').toUpperCase()
-
-/** Types into an article body through the real UI and waits until the room has stored it. */
-async function typeBody(user: MultiplayerUser, universeId: string, articleId: string, text: string) {
-  await user.page.goto(`/u/${universeId}/a/${articleId}`)
-  await expect(user.page.getByTestId('body-sync-state')).toHaveText(/Live/, { timeout: 20_000 })
-  await user.page.getByTestId('article-body').fill(text)
-  await expect
-    .poll(async () => (await storedDocHex(user.page.request, `articles:${articleId}:body`))?.includes(hexOf(text)), {
-      timeout: 20_000,
-    })
-    .toBe(true)
-}
-
 const doc = (text: string) => ({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] })
 
 test('backend enforces universe boundaries and roles', async ({ users }) => {
@@ -174,7 +113,8 @@ test('backend enforces universe boundaries and roles', async ({ users }) => {
     refused(await asCarol('setMemberRole', { universeId: A, userId: 'anyone', role: 'editor' }), ownerOnly)
 
     const renamed = ok(await asAlice('updateUniverse', { universeId: A, name: 'The Shattered Realms II' }))
-    expect(renamed.slug).toBe('the-shattered-realms-ii')
+    // `-n` when an earlier, interrupted run left a seeded universe behind.
+    expect(renamed.slug).toMatch(/^the-shattered-realms-ii(-\d+)?$/)
     refused(await asAlice('updateUniverse', { universeId: A, visibility: 'public' }), /visibility/i)
     refused(await asAlice('deleteUniverse', { universeId: A, confirmName: 'wrong' }), /exactly/)
   })
@@ -203,10 +143,11 @@ test('backend enforces universe boundaries and roles', async ({ users }) => {
   })
 
   await test.step('removing a member revokes their access', async () => {
-    await alice.page.goto(`/u/${A}`)
+    await alice.page.goto(`/u/${A}/settings`)
     const members = alice.page.getByTestId('member-row')
     await expect(members).toHaveCount(3, { timeout: 20_000 })
-    await alice.page.getByRole('listitem').filter({ hasText: 'Carol' }).getByRole('button', { name: 'Remove' }).click()
+    await members.filter({ hasText: 'Carol' }).getByRole('button', { name: 'Remove' }).click()
+    await alice.page.getByRole('button', { name: 'Remove member' }).click()
     await expect(members).toHaveCount(2, { timeout: 20_000 })
     refused(await asCarol('restoreRevision', { revisionId: 'x' }), /not found/)
     refused(await asCarol('renameArticle', { articleId: articles.aria, title: 'x' }), /not found/)
@@ -217,7 +158,7 @@ test('backend enforces universe boundaries and roles', async ({ users }) => {
     await typeBody(bob, A, articles.marches, secret)
     // Alice keeps the article open, so a live subscription exists during the delete.
     await alice.page.goto(`/u/${A}/a/${articles.marches}`)
-    await expect(alice.page.getByTestId('article-body')).toHaveValue(secret, { timeout: 20_000 })
+    await expect(alice.page.getByTestId('article-body-view')).toContainText(secret, { timeout: 20_000 })
 
     ok(await asBob('deleteArticle', { articleId: articles.marches }))
     const stored = await storedDocHex(bob.page.request, `articles:${articles.marches}:body`)

@@ -7,8 +7,9 @@
  * Needs four usable test accounts named Alice, Bob, Carol and Dave:
  *   npx deepspace test accounts list --usable
  */
-import type { APIRequestContext, Page } from '@playwright/test'
-import { test, expect, loadAllTestAccounts, type MultiplayerUser } from 'deepspace/testing'
+import type { APIRequestContext } from '@playwright/test'
+import { test, expect, loadAllTestAccounts } from 'deepspace/testing'
+import { openDashboard as openUniverses, replaceEditorText, tokenFor, startUniverse } from './helpers/mythos'
 
 const NAMES = ['Alice', 'Bob', 'Carol', 'Dave']
 const available = new Set(loadAllTestAccounts().map((a) => a.name))
@@ -20,26 +21,12 @@ test.skip(
 test.describe.configure({ mode: 'serial' })
 test.setTimeout(180_000)
 
-/** A JWT for the signed-in browser context, minted the same way the SDK does. */
-async function tokenFor(page: Page): Promise<string> {
-  const res = await page.request.post('/api/auth/token', { headers: { 'Content-Type': 'application/json' } })
-  expect(res.ok()).toBeTruthy()
-  const body = (await res.json()) as { token?: string }
-  expect(body.token).toBeTruthy()
-  return body.token as string
-}
-
 async function action(request: APIRequestContext, token: string | null, name: string, data: object) {
   const res = await request.post(`/api/actions/${name}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     data,
   })
   return { status: res.status(), body: (await res.json()) as { success?: boolean; error?: string; data?: unknown } }
-}
-
-async function openUniverses(user: MultiplayerUser) {
-  await user.page.goto('/universes')
-  await expect(user.page.getByRole('heading', { name: 'Your universes' })).toBeVisible({ timeout: 20_000 })
 }
 
 test('universe roles are enforced by the server', async ({ users }) => {
@@ -50,17 +37,18 @@ test('universe roles are enforced by the server', async ({ users }) => {
   await Promise.all([alice, bob, carol, dave].map(openUniverses))
 
   // ── Alice creates a universe ────────────────────────────────────────────
-  const createButton = alice.page.getByTestId('new-universe-button')
-  if (await createButton.isVisible()) await createButton.click()
-  else await alice.page.getByRole('button', { name: 'Create a universe' }).click()
+  await startUniverse(alice.page)
   await alice.page.getByLabel('Name').fill(universeName)
   await alice.page.getByRole('button', { name: 'Create universe' }).click()
   await expect(alice.page.getByTestId('universe-name')).toHaveText(universeName, { timeout: 20_000 })
   const universeUrl = new URL(alice.page.url()).pathname
   const universeId = universeUrl.split('/').pop() as string
-  await expect(alice.page.getByTestId('my-universe-role')).toHaveText('owner')
+  // The owner's universe rail offers Settings (non-owners see "Members").
+  const universeSettings = alice.page.locator(`a[href="${universeUrl}/settings"]`)
+  await expect(universeSettings).toHaveText('Settings')
 
   // ── Alice invites Bob (editor) and Carol (viewer) ───────────────────────
+  await universeSettings.click()
   for (const [user, role] of [
     [bob, 'editor'],
     [carol, 'viewer'],
@@ -76,31 +64,35 @@ test('universe roles are enforced by the server', async ({ users }) => {
   await alice.page.getByTestId('new-article-button').click()
   await alice.page.getByLabel('Title').fill('Aria')
   await alice.page.getByRole('button', { name: 'Create article' }).click()
-  await expect(alice.page.getByTestId('article-title')).toHaveText('Aria', { timeout: 20_000 })
-  const articleUrl = new URL(alice.page.url()).pathname
+  await expect(alice.page).toHaveURL(/\/a\/[^/]+\/edit$/, { timeout: 20_000 })
+  const articleUrl = new URL(alice.page.url()).pathname.replace(/\/edit$/, '')
   const articleId = articleUrl.split('/').pop() as string
 
-  // ── Bob (editor) co-edits the body live ─────────────────────────────────
-  await bob.page.goto(articleUrl)
-  await expect(bob.page.getByTestId('body-sync-state')).toHaveText(/Live/, { timeout: 20_000 })
-  await expect(alice.page.getByTestId('body-sync-state')).toHaveText(/Live/, { timeout: 20_000 })
-  await bob.page.getByTestId('article-body').fill('Aria was born in the northern marches.')
-  await expect(alice.page.getByTestId('article-body')).toHaveValue('Aria was born in the northern marches.', {
+  // ── Bob (editor) co-edits the body live; Alice reads it as it changes ───
+  await alice.page.goto(articleUrl)
+  await expect(alice.page.getByTestId('article-title')).toHaveText('Aria', { timeout: 20_000 })
+  await bob.page.goto(`${articleUrl}/edit`)
+  await replaceEditorText(bob.page, 'Aria was born in the northern marches.')
+  await expect(alice.page.getByTestId('article-body-view')).toContainText('Aria was born in the northern marches.', {
     timeout: 20_000,
   })
 
   // ── Carol (viewer) can read but not write ───────────────────────────────
   await carol.page.goto(articleUrl)
-  await expect(carol.page.getByTestId('body-sync-state')).toHaveText('Read only', { timeout: 20_000 })
-  await expect(carol.page.getByTestId('article-body')).toHaveValue('Aria was born in the northern marches.')
-  await expect(carol.page.getByTestId('article-body')).toHaveAttribute('readonly', '')
-  await expect(carol.page.getByTestId('article-summary-input')).toHaveCount(0)
+  await expect(carol.page.getByTestId('article-body-view')).toContainText('Aria was born in the northern marches.', {
+    timeout: 20_000,
+  })
+  await expect(carol.page.getByTestId('edit-article')).toHaveCount(0)
+  await expect(carol.page.getByTestId('new-article-button')).toHaveCount(0)
+  await carol.page.goto(`${articleUrl}/edit`)
+  await expect(carol.page.getByRole('heading', { name: 'Editor not found' })).toBeVisible({ timeout: 20_000 })
+  await expect(carol.page.getByTestId('article-body-editor')).toHaveCount(0)
 
   // ── Dave (outsider) sees nothing ────────────────────────────────────────
   await openUniverses(dave)
   await expect(dave.page.getByText(universeName)).toHaveCount(0)
   await dave.page.goto(articleUrl)
-  await expect(dave.page.getByRole('heading', { name: 'Article not found' })).toBeVisible({ timeout: 20_000 })
+  await expect(dave.page.getByRole('heading', { name: 'Universe not found' })).toBeVisible({ timeout: 20_000 })
 
   // ── Server actions refuse what the role does not allow ──────────────────
   const [carolToken, daveToken, bobToken] = await Promise.all([
@@ -147,7 +139,7 @@ test('universe roles are enforced by the server', async ({ users }) => {
   expect(invalid.body.success).toBe(false)
 
   // ── Demotion takes effect: Bob becomes a viewer ─────────────────────────
-  await alice.page.goto(universeUrl)
+  await alice.page.goto(`${universeUrl}/settings`)
   await alice.page.getByLabel(/Role for Bob/).selectOption('viewer')
   await expect(alice.page.getByLabel(/Role for Bob/)).toHaveValue('viewer', { timeout: 20_000 })
   await expect
@@ -156,13 +148,15 @@ test('universe roles are enforced by the server', async ({ users }) => {
     })
     .toBe(false)
   await bob.page.goto(articleUrl)
-  await expect(bob.page.getByTestId('body-sync-state')).toHaveText('Read only', { timeout: 20_000 })
+  await expect(bob.page.getByTestId('article-title')).toHaveText('Aria', { timeout: 20_000 })
+  await expect(bob.page.getByTestId('edit-article')).toHaveCount(0)
 
   // ── Removal takes effect: Carol loses access ────────────────────────────
-  await alice.page.getByRole('listitem').filter({ hasText: 'Carol' }).getByRole('button', { name: 'Remove' }).click()
+  await alice.page.getByTestId('member-row').filter({ hasText: 'Carol' }).getByRole('button', { name: 'Remove' }).click()
+  await alice.page.getByRole('button', { name: 'Remove member' }).click()
   await expect(alice.page.getByTestId('member-row')).toHaveCount(2, { timeout: 20_000 })
   await carol.page.goto(articleUrl)
-  await expect(carol.page.getByRole('heading', { name: 'Article not found' })).toBeVisible({ timeout: 20_000 })
+  await expect(carol.page.getByRole('heading', { name: 'Universe not found' })).toBeVisible({ timeout: 20_000 })
 
   // The removed viewer cannot reach the article through an action either.
   const removedRename = await action(carol.page.request, carolToken, 'renameArticle', {

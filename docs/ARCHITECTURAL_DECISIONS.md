@@ -233,6 +233,26 @@ The user proposed recycling deleted articles' ids for new articles. That would h
 
 **Consequences and limits:**
 - The universe **owner** still passes the `'collaborator'` check (`ownerField`) during the erase. An owner keystroke in the same instant could land after the erase and before the row is removed. Updates after the row is gone are dropped by the room.
-- `yjs.setText` only handles `Y.Text` fields. When the body moves to Tiptap (`Y.XmlFragment`, ADR-005), the erase will fail closed and refuse deletion. Phase 2 must replace it before switching (for example, a plain-text sibling field or an SDK document-delete tool).
+- ~~`yjs.setText` only handles `Y.Text` fields; a Tiptap body would fail closed.~~ **Superseded by ADR-019:** the Tiptap body is a `Y.XmlFragment` named `body`, and the server's `getText('body').delete(...)` erases its nested content too. That is pinned by `scrub.test.ts` and by stored-byte checks in `mythos-backend.spec.ts` and `mythos-journey.spec.ts`. The read-back check in `eraseArticleBody` is weak for fragments (`getText` reads `''` even before the erase), so the e2e byte checks are the real guarantee.
 - The empty `yjs_docs` row itself stays, holding only an empty document's metadata.
 - Bodies of articles deleted **before** this change keep their content in local development data. Production had no articles.
+
+## ADR-019: Frontend architecture (Task 3)
+**Status:** **Accepted** (2026-11-20)
+
+**Context:** Task 3 asked for the full frontend (auth screens, dashboards, library, article view and editor) in a dark editorial style, with every control connected to the backend.
+
+**Decision:**
+1. **Rich text is Tiptap on the article's record-bound Yjs field.** `useYjsField('articles', id, 'body')` provides the document; Tiptap's Collaboration extension binds to `doc.getXmlFragment('body')`. The fragment **must** be named `body` (the field name): that is what the server-side erase reaches (ADR-018). Editing is enabled only when the room reports `canWrite`, so read-only is the server's decision. ProseMirror's own history is off (Yjs keeps undo); collaborators' carets come from the room's awareness.
+2. **One save action for the editor.** `saveArticle` (Zod-validated) writes title (with slug), type, summary, status, category, cover and tags, and records a version of the body (`recordRevision`, deduplicated by fingerprint). "Save draft" and "Publish" are this action with different `status`. `coverImageKey` left `writableFields` so it is only ever set through validation.
+3. **Cover images** go to the app-scope file store under keys Mythos chooses, `covers/<uuid>.<ext>`, validated by `COVER_KEY_PATTERN` on the server and again before rendering. The store serves app-scope files only by their full key (`apps/<appId>/covers/...`), so `coverUrl(key, appId)` builds the URL. Images are public to anyone with the link (approved earlier).
+4. **Routes:** `/universes` (dashboard), `/u/:id` (overview), `/u/:id/articles` (library), `/u/:id/a/:articleId` (read), `/u/:id/a/:articleId/edit` (editor), `/u/:id/settings`. A universe `_layout` resolves the universe and role once and passes them to pages through the outlet context.
+5. **Layouts use container queries**, not viewport breakpoints, because the assistant dock changes the panel's width independently of the window.
+6. **Library filters live in component state** and are mirrored to the URL (`useLibraryFilters`). Binding inputs directly to the URL dropped quick consecutive changes, because router updates land asynchronously.
+7. **Themes:** `archive` (dark, default) and `vellum` (light) replace the scaffold's `slate`/`paper`. Fonts are Cormorant Garamond (display), Spectral (prose) and Inter (UI).
+
+**Consequences and limits:**
+- Article metadata in the editor is a form saved as a whole. Two editors changing the same metadata field at once: the last save wins. The body is live and merges.
+- Revision history is stored but has no browsing or restore UI yet.
+- Seeded example articles have no live body (the seed only records a version).
+

@@ -16,31 +16,32 @@
  *   4. Switch to it via `data-theme` on <html> in index.html.
  */
 
-/* Paper — light example theme; shows the full token contract incl.
- * `color-scheme: light`. Replace or delete it once the app has its own. */
-[data-theme="paper"] {
+/* Vellum: Mythos light theme. Warm parchment, iron-gall ink, burnished gold. */
+[data-theme="vellum"] {
   color-scheme: light;
-  --color-background: #ffffff;
-  --color-foreground: #0a0a0a;
-  --color-card: #fafafa;
-  --color-card-foreground: #0a0a0a;
-  --color-popover: #ffffff;
-  --color-popover-foreground: #0a0a0a;
-  --color-primary: #171717;
-  --color-primary-foreground: #ffffff;
-  --color-secondary: #f5f5f5;
-  --color-secondary-foreground: #0a0a0a;
-  --color-muted: #f5f5f5;
-  --color-muted-foreground: #525252;
-  --color-accent: #e5e5e5;
-  --color-accent-foreground: #0a0a0a;
-  --color-destructive: #dc2626;
-  --color-destructive-foreground: #ffffff;
-  --color-border: #e5e5e5;
-  --color-input: #e5e5e5;
-  --color-ring: #171717;
-  --shadow-card: 0 1px 2px 0 rgba(0, 0, 0, 0.016);
-  --shadow-card-hover: 0 2px 8px 0 rgba(0, 0, 0, 0.032);
-  --color-shell: #fafafa;
-  --color-shell-panel: #ffffff;
+  --color-background: #f4efe4;
+  --color-foreground: #241d14;
+  --color-card: #fbf8f1;
+  --color-card-foreground: #241d14;
+  --color-popover: #fffdf8;
+  --color-popover-foreground: #241d14;
+  --color-primary: #8a6420;
+  --color-primary-foreground: #fffaf0;
+  --color-secondary: #ece4d4;
+  --color-secondary-foreground: #241d14;
+  --color-muted: #ece5d6;
+  --color-muted-foreground: #6b5e49;
+  --color-accent: #e5dbc6;
+  --color-accent-foreground: #241d14;
+  --color-destructive: #a63a2b;
+  --color-destructive-foreground: #fffaf0;
+  --color-border: #ddd1b9;
+  --color-input: #d4c6aa;
+  --color-ring: #8a6420;
+  --shadow-card: 0 1px 2px 0 rgba(60, 40, 10, 0.06);
+  --shadow-card-hover: 0 8px 24px -10px rgba(60, 40, 10, 0.25);
+  --color-shell: #ebe4d5;
+  --color-shell-panel: #f8f4ea;
+  --cover-tint-l: 82%;
+  --cover-shade-l: 74%;
 }
