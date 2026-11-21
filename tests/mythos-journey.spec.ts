@@ -101,24 +101,28 @@ test("an owner builds a universe end to end", async ({ users }) => {
       await page.getByRole("button", { name: "Create article" }).click();
       await expect(page).toHaveURL(/\/edit$/, { timeout: 20_000 });
 
+      // From the place's side: "Thornwall is home of Lysandra".
+      await page
+        .getByLabel("Relationship type")
+        .selectOption("lives_in:incoming");
       await page.getByLabel("Find an article to link").fill("Lys");
       await page
-        .getByRole("option")
-        .filter({ hasText: "Lysandra Vale" })
-        .getByRole("button")
+        .getByRole("list", { name: "Matching articles" })
+        .getByRole("button", { name: /Lysandra Vale/ })
         .click();
-      await page.getByRole("button", { name: "Add relationship" }).click();
-      await expect(
-        page.getByTestId("relationships-linked-articles"),
-      ).toContainText("Lysandra Vale", { timeout: 20_000 });
+      await page.getByRole("button", { name: "Add connection" }).click();
+      const connectionGroup = (key: string) =>
+        page.getByTestId("connections").locator(`[data-group="${key}"]`);
+      await expect(connectionGroup("lives_in:incoming")).toContainText(
+        "Lysandra Vale",
+        { timeout: 20_000 },
+      );
       // A real upload through the file store; the published cover must load.
-      await page
-        .getByTestId("cover-file-input")
-        .setInputFiles({
-          name: "thornwall.png",
-          mimeType: "image/png",
-          buffer: PNG,
-        });
+      await page.getByTestId("cover-file-input").setInputFiles({
+        name: "thornwall.png",
+        mimeType: "image/png",
+        buffer: PNG,
+      });
       await expect(page.locator('img[src*="/covers/"]')).toHaveCount(1, {
         timeout: 20_000,
       });
@@ -137,12 +141,12 @@ test("an owner builds a universe end to end", async ({ users }) => {
           { timeout: 20_000 },
         )
         .toBe(1);
-      await expect(page.getByTestId("relationships-outgoing")).toContainText(
-        "Lysandra Vale",
+      await expect(connectionGroup("lives_in:incoming")).toContainText(
+        "Home of",
       );
 
       await page.goto(lysandraUrl);
-      await expect(page.getByTestId("relationships-incoming")).toContainText(
+      await expect(connectionGroup("lives_in:outgoing")).toContainText(
         "Thornwall",
         { timeout: 20_000 },
       );

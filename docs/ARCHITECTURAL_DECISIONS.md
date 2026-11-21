@@ -256,3 +256,21 @@ The user proposed recycling deleted articles' ids for new articles. That would h
 - Revision history is stored but has no browsing or restore UI yet.
 - Seeded example articles have no live body (the seed only records a version).
 
+## ADR-020: Relationship model for the knowledge graph (Task 4)
+**Status:** **Accepted** (2026-11-20)
+
+**Context:** Task 4 asked for reliable, intuitive article relationships, designed so family trees, alliances, timelines and maps can be built on them later.
+
+**Decision:**
+1. **One metadata table per link type** (`LINK_TYPE_META` in `src/domain/relationships.ts`): forward and inverse labels, `symmetric`, `acyclic`, and a `family` (kinship, political, membership, geographic, historical, possession, classification, general). Future views pick edges by family instead of hard-coding types.
+2. **Symmetric types are stored in canonical order** (smaller article id first). "A ally of B" and "B ally of A" are the same record, so the collection's `uniqueOn [fromArticleId, toArticleId, type]` stops reverse duplicates, including concurrent ones. A `Duplicate:` refusal from the room becomes "That relationship already exists"; any other failure is logged and reported as an error.
+3. **Hierarchies and orders may not loop.** `parent_of`, `located_in`, `part_of`, `instance_of` and `preceded` are `acyclic`: `createLink` refuses a link whose target already reaches its source through links of the same type. This keeps future family trees, nested maps and timelines drawable.
+4. **Links can be added from either end.** The picker offers each type forward and, for directed types, backward ("home of" stores "<other> lives in <this>"). It greys out candidates the server would refuse.
+5. **Reading** stays in the RecordRoom (members only, `read: 'team'`). `groupConnections` is a pure function that groups an article's links by how they read from it, used by the Connections section.
+6. The `other` article type is labelled **General**. The stored value is unchanged, so no backfill is needed.
+
+**Consequences and limits:**
+- The loop check reads the universe's links of one type; two editors creating the two halves of a loop at the same instant could both succeed. A loop of that kind can only be removed by deleting a link.
+- Links created before this ADR may be stored in non-canonical order, or include a reverse duplicate of a symmetric type. Both still display correctly (the duplicate check compares canonical keys). Production data has not been checked; a reverse duplicate can be removed from the Connections section.
+- Visualizations are not built yet.
+

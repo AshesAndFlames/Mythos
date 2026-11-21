@@ -6,7 +6,7 @@ import { History, PenLine } from 'lucide-react'
 import { CategoryBadge, StatusBadge, TagChip, TypeBadge } from '@/components/mythos/Badges'
 import { ArticleMiniCard } from '@/components/mythos/Cards'
 import { CoverImage } from '@/components/mythos/CoverImage'
-import { RelationshipList, useRelationships } from '@/components/mythos/Relationships'
+import { ConnectionsSection, useConnections } from '@/components/mythos/Relationships'
 import { RichTextView } from '@/components/mythos/RichTextEditor'
 import { ArticleSkeleton } from '@/components/mythos/Skeleton'
 import { ErrorView, NotFoundView } from '@/components/mythos/StatusViews'
@@ -33,7 +33,7 @@ export default function ArticlePage() {
   const { links, status: linkStatus } = useLinks(universe.id)
   const { revisions } = useArticleRevisions(universe.id, articleId)
   const names = useUserNames()
-  const relationships = useRelationships(articleId, links, articles)
+  const connections = useConnections(articleId, links, articles)
   const status = combine(articleStatus, linkStatus)
 
   const tags = byArticle.get(articleId) ?? []
@@ -42,7 +42,7 @@ export default function ArticlePage() {
   /** Same category or a shared tag, not already linked; best matches first. */
   const related = useMemo(() => {
     if (!article) return []
-    const linked = new Set(relationships.map((r) => r.other.id))
+    const linked = new Set(connections.flatMap((g) => g.items.map((i) => i.other.id)))
     const mine = new Set(tags)
     return articles
       .filter((a) => a.id !== article.id && !linked.has(a.id))
@@ -56,14 +56,12 @@ export default function ArticlePage() {
       .sort((x, y) => y.score - x.score || y.a.updatedAt.localeCompare(x.a.updatedAt))
       .slice(0, 5)
       .map((x) => x.a)
-  }, [article, articles, relationships, tags, byArticle])
+  }, [article, articles, connections, tags, byArticle])
 
   if (status === 'loading') return <ArticleSkeleton />
   if (status === 'error') return <ErrorView message="This article could not be loaded. Refresh to try again." />
   if (!article) return <NotFoundView what="Article" backTo={`/u/${universe.id}/articles`} backLabel="Back to the library" />
 
-  const outgoing = relationships.filter((r) => r.direction === 'outgoing')
-  const incoming = relationships.filter((r) => r.direction === 'incoming')
   const latest = revisions[0]
 
   return (
@@ -117,6 +115,22 @@ export default function ArticlePage() {
             ✦
           </div>
           <RichTextView articleId={article.id} />
+          <div className="mt-12">
+            <ConnectionsSection
+              groups={connections}
+              universeId={universe.id}
+              articleTitle={article.title}
+              canEdit={canEdit}
+              emptyText={canEdit ? 'Not connected to anything yet. Add connections from the editor.' : 'Not connected to anything yet.'}
+              footer={
+                canEdit ? (
+                  <Link to={`/u/${universe.id}/a/${article.id}/edit`} className="text-sm text-primary hover:underline">
+                    + Add a connection
+                  </Link>
+                ) : undefined
+              }
+            />
+          </div>
         </div>
 
         <aside className="space-y-8 @4xl:pt-24" aria-label="About this article">
@@ -146,8 +160,6 @@ export default function ArticlePage() {
             )}
           </section>
 
-          <RelationshipList items={outgoing} universeId={universe.id} title="Outgoing" emptyText="This article points nowhere yet." />
-          <RelationshipList items={incoming} universeId={universe.id} title="Incoming" emptyText="Nothing links here yet." />
 
           {related.length > 0 && (
             <section aria-labelledby="related-heading">

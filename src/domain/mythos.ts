@@ -27,7 +27,7 @@ export const ARTICLE_TYPE_LABELS: Record<ArticleType, string> = {
   item: 'Item',
   lore: 'Lore',
   culture: 'Culture',
-  other: 'Other',
+  other: 'General',
 }
 
 export const ARTICLE_STATUSES = ['draft', 'published'] as const
@@ -69,27 +69,6 @@ export const LINK_TYPES = [
   'preceded',
 ] as const
 export type LinkType = (typeof LINK_TYPES)[number]
-
-/** Label read from the link's source, and the inverse label read from its target. */
-export const LINK_LABELS: Record<LinkType, { forward: string; inverse: string }> = {
-  related_to: { forward: 'related to', inverse: 'related to' },
-  ally_of: { forward: 'ally of', inverse: 'ally of' },
-  enemy_of: { forward: 'enemy of', inverse: 'enemy of' },
-  parent_of: { forward: 'parent of', inverse: 'child of' },
-  sibling_of: { forward: 'sibling of', inverse: 'sibling of' },
-  spouse_of: { forward: 'spouse of', inverse: 'spouse of' },
-  member_of: { forward: 'member of', inverse: 'has member' },
-  lives_in: { forward: 'lives in', inverse: 'home of' },
-  leads: { forward: 'leads', inverse: 'led by' },
-  located_in: { forward: 'located in', inverse: 'contains' },
-  part_of: { forward: 'part of', inverse: 'includes' },
-  born_in: { forward: 'born in', inverse: 'birthplace of' },
-  created: { forward: 'created', inverse: 'created by' },
-  owns: { forward: 'owns', inverse: 'owned by' },
-  participated_in: { forward: 'participated in', inverse: 'participant' },
-  instance_of: { forward: 'is a', inverse: 'example' },
-  preceded: { forward: 'preceded', inverse: 'followed' },
-}
 
 export const REFERENCE_SOURCES = ['wikipedia', 'web', 'manual'] as const
 export const USAGE_KINDS = ['ai_text', 'ai_chat', 'image', 'research'] as const

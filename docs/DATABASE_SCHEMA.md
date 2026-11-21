@@ -170,6 +170,7 @@ permissions: {
 | `note` | T plain | | ≤ 500 |
 
 - `teamField: 'universeId'`, `uniqueOn: ['fromArticleId','toArticleId','type']`.
+- Symmetric types (`related_to`, `ally_of`, `enemy_of`, `sibling_of`, `spouse_of`) are stored with the smaller article id as `fromArticleId`, so `uniqueOn` also blocks reverse duplicates. Hierarchical types (`parent_of`, `located_in`, `part_of`, `instance_of`, `preceded`) may not form loops. Type metadata lives in `src/domain/relationships.ts` (ADR-020).
 - `member: { read: 'team', create: false, update: false, delete: false }`. `createLink`, `updateLinkNote` and `deleteLink` are actions.
 
 Relationship types and inverse labels (the inverse is computed in the UI from one stored row):

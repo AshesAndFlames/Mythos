@@ -11,7 +11,7 @@ import { Button, Input, Label, Textarea, useToast } from '@/components/ui'
 import { StatusBadge } from '@/components/mythos/Badges'
 import { CoverPicker } from '@/components/mythos/CoverUpload'
 import { ConfirmDialog } from '@/components/mythos/Dialogs'
-import { RelationshipList, RelationshipPicker, useRelationships, type RelationshipItem } from '@/components/mythos/Relationships'
+import { ConnectionsSection, RelationshipPicker, useConnections } from '@/components/mythos/Relationships'
 import { RichTextEditor, useArticleBody } from '@/components/mythos/RichTextEditor'
 import { ArticleSkeleton } from '@/components/mythos/Skeleton'
 import { ErrorView, FormError, NotFoundView, selectClass } from '@/components/mythos/StatusViews'
@@ -72,13 +72,12 @@ function Editor({ article, articles, initialTags }: { article: ArticleView; arti
   const [saving, setSaving] = useState<ArticleStatus | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [unlinking, setUnlinking] = useState<RelationshipItem | null>(null)
 
   const body = useArticleBody(article.id, { editable: true })
   const { categories } = useCategories(universe.id)
   const { tags: allTags } = useTags(universe.id)
   const { links } = useLinks(universe.id)
-  const relationships = useRelationships(article.id, links, articles)
+  const connections = useConnections(article.id, links, articles)
 
   const dirty = JSON.stringify(form) !== JSON.stringify(saved)
   useEffect(() => {
@@ -226,18 +225,15 @@ function Editor({ article, articles, initialTags }: { article: ArticleView; arti
             <p className="text-xs text-muted-foreground">Saved with the article. Anyone who has an image's direct link can view it.</p>
           </div>
 
-          <div className="space-y-3">
-            <p className="text-sm font-medium text-foreground">Relationships</p>
-            <p className="text-xs text-muted-foreground">Relationships are saved immediately.</p>
-            <RelationshipList
-              items={relationships}
-              universeId={universe.id}
-              title="Linked articles"
-              emptyText="No relationships yet."
-              onRemove={setUnlinking}
-            />
-            <RelationshipPicker articleId={article.id} articles={articles} />
-          </div>
+          <ConnectionsSection
+            compact
+            groups={connections}
+            universeId={universe.id}
+            articleTitle={article.title}
+            canEdit
+            emptyText="No connections yet. Connections are saved as soon as you add them."
+            footer={<RelationshipPicker article={article} articles={articles} links={links} />}
+          />
 
           <div className="border-t border-border pt-6">
             <Button type="button" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setConfirmDelete(true)}>
@@ -258,20 +254,6 @@ function Editor({ article, articles, initialTags }: { article: ArticleView; arti
           if (!res.ok) return res.error
           toast.success('Article deleted')
           navigate(`/u/${universe.id}/articles`, { replace: true })
-          return null
-        }}
-      />
-      <ConfirmDialog
-        open={unlinking !== null}
-        onClose={() => setUnlinking(null)}
-        title="Remove this relationship?"
-        description={unlinking ? `“${article.title}” will no longer be ${unlinking.label} “${unlinking.other.title}”.` : ''}
-        confirmText="Remove"
-        onConfirm={async () => {
-          if (!unlinking) return null
-          const res = await callAction('deleteLink', { linkId: unlinking.link.id })
-          if (!res.ok) return res.error
-          toast.success('Relationship removed')
           return null
         }}
       />
