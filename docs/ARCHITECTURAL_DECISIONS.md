@@ -146,7 +146,7 @@ The fallback is not needed.
 **Dependency:** the scaffold's AI tools already use Zod **[verify after scaffolding]**. Otherwise add `zod` as the one explicit dependency.
 
 ## ADR-013: Categories are a separate collection; tags are a JSON column
-**Status:** Proposed
+**Status:** **Superseded in part** by ADR-017 (tags are now collections; categories allow 5 levels). The category design is accepted.
 
 **Context:** The product needs both a navigable hierarchy and free-form labels.
 
@@ -192,3 +192,47 @@ The fallback is not needed.
 - The schema names differ from the rest of the camelCase model. This is deliberate and commented in `mythos-schemas.ts`.
 - `createActionTools` lives in `src/server/action-tools.ts`, so actions can build system tools.
 - Recheck these four points on every SDK upgrade (`deepspace app update`).
+
+## ADR-017: Backend foundation (tags, revisions, visibility, reference fields)
+**Status:** **Accepted** (2026-11-20)
+
+**Context:** The backend brief asked for profiles, universes with visibility, tags and article_tags, typed relationships, and article revisions, all with RLS-equivalent security.
+
+**Decisions:**
+1. **Visibility is `private` only.** `universes.visibility` exists, but its `select` allows only `private`. The permission system cannot express "members OR public" on one collection, so public universes need their own read path and design. Chosen by the user.
+2. **Revisions are editor snapshots.** The live body stays a collaborative Yjs document. `saveRevision` receives the editor's rich-text JSON, validates it (`richTextDocSchema`), copies title and summary from the server's row, skips identical saves by fingerprint, and keeps 50 per article. `restoreRevision` restores title and summary and returns the body, which the editor applies and saves as a new version. The server cannot render the Yjs document as rich text, so a snapshot can only be as true as the editor that sends it. Only editors can send one, and they can edit the article anyway. Chosen by the user.
+3. **Tags are collections** (`tags` and `article_tags`), not a JSON column. **Breaking change:** `articles.tags` was removed. *Backfill:* none needed. No action or UI ever wrote a non-empty `tags` value (createArticle wrote `[]`, and no client control existed). Had there been data, a one-off action would have read each article's `tags` and called `setArticleTags`.
+4. **Reference, unique and JSON fields are action-only.** `categoryId`, `title`, and `infobox` left `writableFields`. Before this, an editor could set `categoryId` to a category in another universe. Now `setArticleCategory` checks the universe, and `setArticleInfobox` bounds the JSON with Zod.
+5. **The DO is the second line of defence.** `maxLength` sits on every plain-text column. It cannot be put on JSON columns, because the DO rejects non-string values under `maxLength`; this was found when the first runtime test failed.
+6. **No custom indexes.** The SDK creates unique indexes from `uniqueOn` and has no other index configuration.
+7. **Seed data is an action**, refused when the production platform binding is present.
+
+**Consequences:**
+- The client UI must switch title edits to `renameArticle` (done) and future category, tag and infobox controls to their actions.
+- Deleted articles' Yjs bodies are erased before deletion (ADR-018).
+
+## ADR-018: Erase article bodies on delete; never reuse article ids
+**Status:** **Accepted** (2026-11-20)
+
+**Context:** The SDK stores record-bound Yjs documents in the RecordRoom's `yjs_docs` table, keyed `articles:<id>:<field>`, and never deletes them. After an article row is deleted, new joins are refused (the join looks up the row). But two paths still reach the stored body:
+- A browser that joined **before** the deletion keeps its subscription, and the room answers its sync requests (`MSG_SYNC_STEP1`) without rechecking the row.
+- Any new article that reused the id would serve the old body to its own readers, possibly in another universe.
+
+The user proposed recycling deleted articles' ids for new articles. That would have opened the second path, so it was declined in favour of this design.
+
+**Decision:**
+1. `deleteArticle` and `deleteUniverse` erase each article's Yjs fields (`ARTICLE_YJS_FIELDS`, today `body`) **before** deleting any row (`src/server/mythos/scrub.ts`):
+   - Empty the article's `editorIds`, so editors' live updates are refused during the erase.
+   - Use `yjs.setText(..., '')` as the system identity.
+   - Read the text back and require `''`.
+   - If anything fails, restore the editor list and refuse the deletion, so an article is never deleted with its body intact.
+2. Yjs encodes stored state with garbage collection on (the room's default `new Y.Doc()`), and the room re-saves the full state on every update. Erased text is therefore gone from the stored bytes, not merely hidden. Pinned by `scrub.test.ts`.
+3. `createArticle` assigns `crypto.randomUUID()` explicitly. The SDK's default id is a timestamp plus 6 random characters; a UUID makes an id coming back a non-event.
+
+**Verification:** `tests/mythos-backend.spec.ts` types a secret into real article bodies through the UI and confirms it is in the stored bytes. It then deletes an article (while another member has it open) and the whole universe, and confirms the bytes no longer contain the secret. It reads `yjs_docs` through wrangler's local explorer API.
+
+**Consequences and limits:**
+- The universe **owner** still passes the `'collaborator'` check (`ownerField`) during the erase. An owner keystroke in the same instant could land after the erase and before the row is removed. Updates after the row is gone are dropped by the room.
+- `yjs.setText` only handles `Y.Text` fields. When the body moves to Tiptap (`Y.XmlFragment`, ADR-005), the erase will fail closed and refuse deletion. Phase 2 must replace it before switching (for example, a plain-text sibling field or an SDK document-delete tool).
+- The empty `yjs_docs` row itself stays, holding only an empty document's metadata.
+- Bodies of articles deleted **before** this change keep their content in local development data. Production had no articles.

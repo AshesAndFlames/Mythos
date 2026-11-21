@@ -16,27 +16,53 @@ import type { ActionResult, ActionTools } from 'deepspace/worker'
 import { integrations } from '../integrations.js'
 import type { Env } from '../../worker.js'
 
-export function createActionTools(env: Env, userId: string, callerJwt: string): ActionTools {
+/**
+ * Runs one tools-API call in the app's record room as `userId`, with RBAC off
+ * for records (X-App-Action). Yjs tools still check the record's permissions
+ * for that user, so they need the system identity to write.
+ */
+async function execRoomTool<TData>(
+  env: Env,
+  userId: string,
+  tool: string,
+  params: Record<string, unknown>,
+): Promise<ActionResult<TData>> {
   const stub = env.RECORD_ROOMS.get(env.RECORD_ROOMS.idFromName(`app:${env.DEEPSPACE_APP_ID}`))
+  const res = await stub.fetch(
+    new Request('https://internal/api/tools/execute', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-User-Id': userId,
+        'X-App-Action': 'true',
+      },
+      body: JSON.stringify({ tool, params }),
+    }),
+  )
+  return res.json() as Promise<ActionResult<TData>>
+}
 
+/** Text-field access to record-bound Yjs documents (`useYjsText` fields). */
+export interface YjsTextTools {
+  getText(collection: string, recordId: string, fieldName: string): Promise<ActionResult<{ text: string }>>
+  /** Replaces the whole text and broadcasts the change to connected editors. */
+  setText(collection: string, recordId: string, fieldName: string, text: string): Promise<ActionResult<{ length: number }>>
+}
+
+export function createYjsTextTools(env: Env, userId: string): YjsTextTools {
+  return {
+    getText: (collection, recordId, fieldName) =>
+      execRoomTool(env, userId, 'yjs.getText', { collection, recordId, fieldName }),
+    setText: (collection, recordId, fieldName, text) =>
+      execRoomTool(env, userId, 'yjs.setText', { collection, recordId, fieldName, text }),
+  }
+}
+
+export function createActionTools(env: Env, userId: string, callerJwt: string): ActionTools {
   // The DO returns ActionResult<unknown>; callers below supply the precise
   // operation result type fixed by the SDK tools-api wire contract.
-  async function execTool<TData>(
-    tool: string,
-    params: Record<string, unknown>,
-  ): Promise<ActionResult<TData>> {
-    const res = await stub.fetch(
-      new Request('https://internal/api/tools/execute', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-User-Id': userId,
-          'X-App-Action': 'true',
-        },
-        body: JSON.stringify({ tool, params }),
-      }),
-    )
-    return res.json() as Promise<ActionResult<TData>>
+  function execTool<TData>(tool: string, params: Record<string, unknown>): Promise<ActionResult<TData>> {
+    return execRoomTool<TData>(env, userId, tool, params)
   }
 
   async function callIntegration<T>(endpoint: string, data?: unknown): Promise<ActionResult<T>> {

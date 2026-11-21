@@ -8,12 +8,13 @@
 
 import type { ActionHandler, ActionResult, ActionTools } from 'deepspace/worker'
 import type { z } from 'zod'
-import { createActionTools } from '../action-tools.js'
+import { createActionTools, createYjsTextTools, type YjsTextTools } from '../action-tools.js'
 import type { Env } from '../../../worker.js'
+import { UserError } from './errors'
 import { AccessDenied } from './membership'
 import { firstIssue } from './validation'
 
-export class UserError extends Error {}
+export { UserError }
 
 export interface MythosActionContext<P> {
   /** Verified caller (JWT subject). */
@@ -27,6 +28,8 @@ export interface MythosActionContext<P> {
    * be removed (the DO's 'team' read also admits a row's creator).
    */
   system: ActionTools
+  /** Yjs text-field tools acting as the system identity (passes every record check). */
+  systemYjs: YjsTextTools
   env: Env
 }
 
@@ -40,7 +43,8 @@ export function mythosAction<S extends z.ZodType, R>(
     if (!parsed.success) return { success: false, error: firstIssue(parsed.error) }
     try {
       const system = createActionTools(env, env.OWNER_USER_ID, '')
-      const data = await run({ userId, params: parsed.data, tools, system, env })
+      const systemYjs = createYjsTextTools(env, env.OWNER_USER_ID)
+      const data = await run({ userId, params: parsed.data, tools, system, systemYjs, env })
       return { success: true, data }
     } catch (err) {
       if (err instanceof AccessDenied || err instanceof UserError) {

@@ -170,4 +170,11 @@ test('universe roles are enforced by the server', async ({ users }) => {
     title: 'Mine now',
   })
   expect(removedRename.body.success).toBe(false)
+
+  // Clean up, so repeated runs stay under the per-owner universe cap.
+  const cleanup = await action(alice.page.request, await tokenFor(alice.page), 'deleteUniverse', {
+    universeId,
+    confirmName: universeName,
+  })
+  expect(cleanup.body.success).toBe(true)
 })

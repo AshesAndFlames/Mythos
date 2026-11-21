@@ -42,6 +42,13 @@ export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number]
 
 export const MEMBER_STATUSES = ['active', 'removed'] as const
 
+/**
+ * Universe visibility. Only 'private' exists today: Mythos is a members-only
+ * app (ADR-010). Public universes need their own read path (ADR-017).
+ */
+export const UNIVERSE_VISIBILITIES = ['private'] as const
+export type UniverseVisibility = (typeof UNIVERSE_VISIBILITIES)[number]
+
 export const LINK_TYPES = [
   'related_to',
   'ally_of',
@@ -50,6 +57,7 @@ export const LINK_TYPES = [
   'sibling_of',
   'spouse_of',
   'member_of',
+  'lives_in',
   'leads',
   'located_in',
   'part_of',
@@ -71,6 +79,7 @@ export const LINK_LABELS: Record<LinkType, { forward: string; inverse: string }>
   sibling_of: { forward: 'sibling of', inverse: 'sibling of' },
   spouse_of: { forward: 'spouse of', inverse: 'spouse of' },
   member_of: { forward: 'member of', inverse: 'has member' },
+  lives_in: { forward: 'lives in', inverse: 'home of' },
   leads: { forward: 'leads', inverse: 'led by' },
   located_in: { forward: 'located in', inverse: 'contains' },
   part_of: { forward: 'part of', inverse: 'includes' },
@@ -99,8 +108,18 @@ export const LIMITS = {
   tags: 20,
   tag: 40,
   categoryName: 80,
+  categoryDepth: 5,
   linkNote: 500,
   slug: 120,
+  /** Universes one user may own. */
+  universesPerOwner: 25,
+  /** Oldest revisions beyond this are pruned when a new one is saved. */
+  revisionsPerArticle: 50,
+  revisionNote: 200,
+  /** Serialized size cap for one rich-text snapshot (UTF-16 code units). */
+  richTextChars: 200_000,
+  richTextDepth: 40,
+  richTextNodes: 20_000,
 } as const
 
 /** Collection names, kept in one place so worker and client agree. */
@@ -111,5 +130,8 @@ export const COLLECTIONS = {
   articles: 'articles',
   articleLinks: 'article_links',
   articleReferences: 'article_references',
+  articleRevisions: 'article_revisions',
+  tags: 'tags',
+  articleTags: 'article_tags',
   usage: 'usage',
 } as const

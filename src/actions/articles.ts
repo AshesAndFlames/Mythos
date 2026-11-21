@@ -1,14 +1,17 @@
 import type { ActionTools } from 'deepspace/worker'
 import { COLLECTIONS } from '../domain/mythos'
-import type { ArticleData } from '../domain/records'
+import type { ArticleData, CategoryData } from '../domain/records'
 import { mythosAction, UserError } from '../server/mythos/action'
-import { requireRole } from '../server/mythos/membership'
-import { getArticle, mustSucceed, queryAll } from '../server/mythos/store'
+import { requireArticle, requireRole } from '../server/mythos/membership'
+import { lockAndEraseArticles } from '../server/mythos/scrub'
+import { drain, getRecord, mustSucceed, queryAll } from '../server/mythos/store'
 import { slugify, uniqueSlug } from '../server/mythos/slug'
 import {
   articleIdSchema,
   createArticleSchema,
   renameArticleSchema,
+  setArticleCategorySchema,
+  setArticleInfoboxSchema,
 } from '../server/mythos/validation'
 
 async function takenSlugs(tools: ActionTools, universeId: string, exceptId?: string) {
@@ -34,18 +37,17 @@ export const createArticle = mythosAction(
       summary: params.summary,
       infobox: [],
       categoryId: '',
-      tags: [],
       status: 'draft',
       coverImageKey: '',
       editorIds: universe.data.editorIds ?? [universe.data.ownerId],
       ownerId: universe.data.ownerId,
       authorId: userId,
     }
-    const created = await mustSucceed(
-      system.create(COLLECTIONS.articles, { ...article }),
-      'Creating the article',
-    )
-    return { articleId: created.recordId, slug }
+    // A fresh UUID, never an SDK timestamp id: an article id must never be
+    // reused, or the new article would inherit any stored body under that key.
+    const articleId = crypto.randomUUID()
+    await mustSucceed(system.create(COLLECTIONS.articles, { ...article }, articleId), 'Creating the article')
+    return { articleId, slug }
   },
 )
 
@@ -54,10 +56,7 @@ export const renameArticle = mythosAction(
   'renameArticle',
   renameArticleSchema,
   async ({ userId, params, tools, system }) => {
-    const article = await getArticle(tools, params.articleId)
-    if (!article) throw new UserError('Article not found')
-    await requireRole(tools, userId, article.data.universeId, 'editor')
-
+    const { article } = await requireArticle(tools, userId, params.articleId, 'editor')
     const slug = uniqueSlug(
       slugify(params.title),
       await takenSlugs(tools, article.data.universeId, article.recordId),
@@ -70,29 +69,65 @@ export const renameArticle = mythosAction(
   },
 )
 
-/** Deletes `where`-matching rows page by page (deleteWhere caps one call at 500). */
-async function drain(tools: ActionTools, collection: string, where: Record<string, unknown>) {
-  const LIMIT = 500
-  for (;;) {
-    const res = await mustSucceed(tools.deleteWhere(collection, where, LIMIT), `Deleting ${collection}`)
-    if (res.deleted < LIMIT) return
-  }
-}
+/**
+ * Files an article under a category of the SAME universe, or clears it with
+ * '' (editor or owner). A category id from another universe answers
+ * "not found", exactly like one that does not exist.
+ */
+export const setArticleCategory = mythosAction(
+  'setArticleCategory',
+  setArticleCategorySchema,
+  async ({ userId, params, tools, system }) => {
+    const { article } = await requireArticle(tools, userId, params.articleId, 'editor')
+    if (params.categoryId) {
+      const category = await getRecord<CategoryData>(tools, COLLECTIONS.categories, params.categoryId)
+      if (!category || category.data.universeId !== article.data.universeId) {
+        throw new UserError('Category not found')
+      }
+    }
+    await mustSucceed(
+      system.update(COLLECTIONS.articles, article.recordId, { categoryId: params.categoryId }),
+      'Setting the category',
+    )
+    return { articleId: article.recordId, categoryId: params.categoryId }
+  },
+)
 
-/** Deletes an article with its links (both directions) and references (editor or owner). */
+/** Replaces an article's infobox rows (editor or owner). */
+export const setArticleInfobox = mythosAction(
+  'setArticleInfobox',
+  setArticleInfoboxSchema,
+  async ({ userId, params, tools, system }) => {
+    const { article } = await requireArticle(tools, userId, params.articleId, 'editor')
+    await mustSucceed(
+      system.update(COLLECTIONS.articles, article.recordId, { infobox: params.infobox }),
+      'Saving the infobox',
+    )
+    return { articleId: article.recordId }
+  },
+)
+
+/**
+ * Deletes an article with its links (both directions), references, tags and
+ * revisions. Its collaborative body is erased and verified empty first
+ * (src/server/mythos/scrub.ts); if erasing fails, nothing is deleted.
+ */
 export const deleteArticle = mythosAction(
   'deleteArticle',
   articleIdSchema,
-  async ({ userId, params, tools, system }) => {
-    const article = await getArticle(tools, params.articleId)
-    if (!article) throw new UserError('Article not found')
+  async ({ userId, params, tools, system, systemYjs }) => {
+    const { article } = await requireArticle(tools, userId, params.articleId, 'editor')
     const universeId = article.data.universeId
-    await requireRole(tools, userId, universeId, 'editor')
+    const articleId = article.recordId
 
-    await drain(system, COLLECTIONS.articleLinks, { universeId, fromArticleId: article.recordId })
-    await drain(system, COLLECTIONS.articleLinks, { universeId, toArticleId: article.recordId })
-    await drain(system, COLLECTIONS.articleReferences, { universeId, articleId: article.recordId })
-    await mustSucceed(system.remove(COLLECTIONS.articles, article.recordId), 'Deleting the article')
-    return { articleId: article.recordId }
+    await lockAndEraseArticles(system, systemYjs, universeId, [articleId])
+
+    await drain(system, COLLECTIONS.articleLinks, { universeId, fromArticleId: articleId })
+    await drain(system, COLLECTIONS.articleLinks, { universeId, toArticleId: articleId })
+    await drain(system, COLLECTIONS.articleReferences, { universeId, articleId })
+    await drain(system, COLLECTIONS.articleTags, { universeId, articleId })
+    await drain(system, COLLECTIONS.articleRevisions, { universeId, articleId })
+    await mustSucceed(system.remove(COLLECTIONS.articles, articleId), 'Deleting the article')
+    return { articleId }
   },
 )

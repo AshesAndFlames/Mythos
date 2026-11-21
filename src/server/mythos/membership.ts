@@ -10,7 +10,14 @@ import type { ActionTools } from 'deepspace/worker'
 import { COLLECTIONS, type UniverseRole } from '../../domain/mythos'
 import type { ArticleData, UniverseData } from '../../domain/records'
 import { computeEditorIds, hasAtLeast, isUniverseRole, sameIds } from './roles'
-import { getMembership, getUniverse, listMemberships, queryAll, type Envelope } from './store'
+import {
+  getMembership,
+  getRecord,
+  getUniverse,
+  listMemberships,
+  queryAll,
+  type Envelope,
+} from './store'
 
 export class AccessDenied extends Error {}
 
@@ -78,5 +85,56 @@ export async function fanOutEditorIds(
     if (sameIds(article.data.editorIds, editorIds)) continue
     const res = await tools.update(COLLECTIONS.articles, article.recordId, { editorIds })
     if (!res.success) throw new Error(`Updating article editors failed: ${res.error}`)
+  }
+}
+
+export interface ArticleAccess extends UniverseAccess {
+  article: Envelope<ArticleData>
+}
+
+/**
+ * Loads an article and requires `minimum` in ITS universe. Ids from another
+ * universe — or that do not exist — answer the same "not found".
+ */
+export async function requireArticle(
+  tools: ActionTools,
+  userId: string,
+  articleId: string,
+  minimum: UniverseRole,
+): Promise<ArticleAccess> {
+  const article = await getRecord<ArticleData>(tools, COLLECTIONS.articles, articleId)
+  if (!article) throw new AccessDenied('Article not found')
+  try {
+    return { article, ...(await requireRole(tools, userId, article.data.universeId, minimum)) }
+  } catch (err) {
+    if (err instanceof AccessDenied && err.message === 'Universe not found') {
+      throw new AccessDenied('Article not found')
+    }
+    throw err
+  }
+}
+
+/**
+ * Loads a universe-owned row and requires `minimum` in its universe. Used for
+ * categories, tags, links and revisions: whatever id the caller sends, the
+ * universe that is checked is the one the ROW belongs to.
+ */
+export async function requireOwned<T extends { universeId: string }>(
+  tools: ActionTools,
+  userId: string,
+  collection: string,
+  recordId: string,
+  minimum: UniverseRole,
+  what: string,
+): Promise<UniverseAccess & { record: Envelope<T> }> {
+  const record = await getRecord<T>(tools, collection, recordId)
+  if (!record) throw new AccessDenied(`${what} not found`)
+  try {
+    return { record, ...(await requireRole(tools, userId, record.data.universeId, minimum)) }
+  } catch (err) {
+    if (err instanceof AccessDenied && err.message === 'Universe not found') {
+      throw new AccessDenied(`${what} not found`)
+    }
+    throw err
   }
 }

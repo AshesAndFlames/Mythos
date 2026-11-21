@@ -1,6 +1,6 @@
 # Mythos: Database Schema (DeepSpace collections)
 
-Status: **Proposed.** This is the canonical schema document; ARCHITECTURE.md summarizes it.
+Status: **Implemented** (2026-11-20) in `src/schemas/mythos-schemas.ts`; types in `src/domain/records.ts`. This is the canonical schema document; ARCHITECTURE.md summarizes it. §7 maps the original Supabase-style brief onto it.
 
 ## 0. How "the database" works on DeepSpace
 
@@ -17,6 +17,9 @@ There is no SQL database to provision and no migrations folder. Each collection 
 | `SECURITY DEFINER` functions | Server actions (`/api/actions/:name`), which run as the app with a verified `ctx.userId` |
 | Foreign keys | `{ kind: 'reference' }` interpretation (advisory). Integrity is enforced in server actions |
 | Migrations | Schema changes ship on deploy. The automatic migration handles added columns. Breaking changes are documented in ARCHITECTURAL_DECISIONS.md |
+| `CHECK` constraints | `required`, `select` options, and `maxLength` on plain-text columns, all enforced by the DO before persisting |
+| Indexes | One unique index per `uniqueOn`. The SDK has no other index configuration (ADR-017) |
+| Seed data | The `seedExampleUniverse` action, refused outside local dev (§8) |
 
 Every record has the envelope `{ recordId, data, createdBy, createdAt, updatedAt }`. Fields live under `data`.
 
@@ -29,8 +32,10 @@ users (scaffold) 1───* team_members *───1 universes
             *              *               *                  *
        categories      articles ──*── article_links ──*──  (articles)
        (parentId→self)    │1  │*
-                          *   └── categoryId → categories
-                 article_references
+                          │   └── categoryId → categories
+            ┌─────────────┼──────────────┐
+            *             *              *
+  article_references  article_revisions  article_tags *───1 tags
 
 usage (per user/day/kind; admin + actions only)
 ai-chats / ai-messages (drop-in, owner-only)
@@ -47,7 +52,8 @@ ai-chats / ai-messages (drop-in, owner-only)
 | `collaboratorsField: 'editorIds'` + `update: 'collaborator'` | **Editor vs. viewer.** Only the owner and editors can update fields or type in the Yjs body |
 | `ownerField: 'ownerId'` (universe owner) | The owner always passes `'collaborator'` |
 | `create: false` for `member` | Rows are created only by server actions that check the universe role (`create` is boolean-only and cannot check the team) |
-| `writableFields` | Clients cannot touch `universeId`, `editorIds`, `ownerId` or other system fields |
+| `writableFields` | Articles: clients may change only `summary`, `type`, `status`, `coverImageKey`. Everything that references another record, must stay unique, or is JSON goes through an action |
+| `maxLength` | Every plain-text column. JSON columns cannot take it (the DO rejects non-strings), so they are action-only and Zod-bounded |
 | `uniqueOn` | Uniqueness of slugs, memberships, links and usage counters, enforced in the DO |
 
 `'*'` (anonymous) and `viewer` (the app-level role) get **no access** to any Mythos collection.
@@ -65,11 +71,12 @@ Keep `BASE_USERS_SCHEMA` / `USERS_COLUMNS` unchanged, with `member: { read: 'own
 | Column | Type | Flags | Notes |
 |---|---|---|---|
 | `name` | T plain | Req | 1–120 chars (Zod) |
-| `slug` | T plain | Req | URL-friendly; uniqueness is not required (routes use the id) |
+| `slug` | T plain | | Server-generated from the name; `uniqueOn: ['ownerId','slug']` (per owner, so it never reveals other users' universes) |
 | `tagline` | T plain | | ≤ 200 |
 | `description` | T plain | | ≤ 5,000 |
 | `artStyle` | T plain | | ≤ 300; image prompt suffix |
 | `coverImageKey` | T plain | | R2 key |
+| `visibility` | T select `private` | default `private` | Only `private` today (ADR-017) |
 | `ownerId` | T plain | Imm | Creator |
 | `editorIds` | T json | | Server-maintained: owner + editors |
 
@@ -83,7 +90,7 @@ permissions: {
 }
 ```
 
-Universe settings are owner-only and go through the `updateUniverse` action (PRODUCT_SPEC F5).
+Universe settings are owner-only and go through the `updateUniverse` action (PRODUCT_SPEC F5). `deleteUniverse` (owner, with the name typed as confirmation) cascades. An owner may own at most 25 universes.
 
 ### 3.3 `team_members` (name required by the SDK)
 
@@ -113,7 +120,7 @@ Removal **deletes** the row (rather than setting `removed`). Re-inviting then wo
 |---|---|---|---|
 | `universeId` | T reference→universes | Req, Imm | teamField |
 | `name` | T plain | Req | 1–80 |
-| `parentId` | T reference→categories | | null = top level. MVP allows depth ≤ 2 |
+| `parentId` | T plain | | '' = top level. Same universe, no cycles, at most 5 levels (`checkParent`) |
 | `sortOrder` | N plain | | |
 
 - `teamField: 'universeId'`, `uniqueOn: ['universeId','parentId','name']`.
@@ -129,9 +136,8 @@ Removal **deletes** the row (rather than setting `removed`). Re-inviting then wo
 | `type` | T select `character,location,faction,event,species,item,lore,culture,other` | Req | |
 | `summary` | T plain | | ≤ 1,000; used by search and AI context |
 | `body` | (Yjs field) | | Not a column. `useYjsField('articles', id, 'body')` persists it in the RecordRoom |
-| `infobox` | T json | | `Array<{ key: string; value: string }>`, ≤ 30 entries; suggested keys per type |
-| `categoryId` | T reference→categories | | Nullable |
-| `tags` | T json | | `string[]`, ≤ 20, each ≤ 40, lowercased |
+| `infobox` | T json | | `Array<{ key: string; value: string }>`, ≤ 30 entries. Written only by `setArticleInfobox` |
+| `categoryId` | T plain | | '' or a category in the same universe. Written only by `setArticleCategory` |
 | `status` | T select `draft,published` | Req, default `draft` | Within-universe label in MVP |
 | `coverImageKey` | T plain | | |
 | `editorIds` | T json | | Server-maintained |
@@ -143,13 +149,15 @@ Removal **deletes** the row (rather than setting `removed`). Re-inviting then wo
 ```ts
 permissions: {
   member: { read: 'team', create: false, update: 'collaborator', delete: false,
-            writableFields: ['title','summary','type','infobox','categoryId','tags','status','coverImageKey'] },
+            writableFields: ['summary','type','status','coverImageKey'] },
   admin:  { read: true, create: true, update: true, delete: true },
 }
 ```
 
-- `slug` is set only by actions (`createArticle`, `renameArticle`) so uniqueness errors surface cleanly.
-- `categoryId` written directly by a client is validated lazily: the UI only offers same-universe categories. A forged foreign id only harms the forger's view, because categories from other universes are unreadable and are shown as "Uncategorized". **[Option]** Move it to an action for strictness.
+- `title` and `slug` are set only by actions (`createArticle`, `renameArticle`, `restoreRevision`) so uniqueness errors surface cleanly.
+- `categoryId` is set only by `setArticleCategory`, which checks the category is in the same universe (ADR-017).
+- Tags moved to the `tags` / `article_tags` collections (ADR-017).
+- Rich-text content: the live body is the Yjs field; saved versions are rich-text JSON in `article_revisions`.
 
 ### 3.6 `article_links`
 
@@ -175,6 +183,7 @@ Relationship types and inverse labels (the inverse is computed in the UI from on
 | `sibling_of` | sibling of | sibling of |
 | `spouse_of` | spouse of | spouse of |
 | `member_of` | member of | has member |
+| `lives_in` | lives in | home of |
 | `leads` | leads | led by |
 | `located_in` | located in | contains |
 | `part_of` | part of | includes |
@@ -199,6 +208,38 @@ Relationship types and inverse labels (the inverse is computed in the UI from on
 - `teamField: 'universeId'`, `uniqueOn: ['articleId','url']`.
 - `member: { read: 'team', create: false, update: false, delete: false }` (actions).
 
+### 3.7a `article_revisions`
+
+| Column | Type | Flags | Notes |
+|---|---|---|---|
+| `universeId` | T | Req, Imm | teamField |
+| `articleId` | T | Req, Imm | |
+| `number` | N | Req, Imm | 1, 2, 3, … per article |
+| `title`, `summary` | T plain | Imm | Copied from the server's article row, not from the client |
+| `content` | T json | Req, Imm | ProseMirror/Tiptap JSON from the editor, validated by `richTextDocSchema` (root `doc`, scalar attrs, safe link schemes, depth ≤ 40, ≤ 20,000 nodes, ≤ 200,000 chars) |
+| `fingerprint` | T | Req, Imm | SHA-256 of canonical {title, summary, content}; identical saves are skipped |
+| `authorId` | T | Req, Imm | The editor who saved it |
+| `note` | T plain | Imm | ≤ 200 |
+
+- `uniqueOn: ['articleId','number']`: concurrent saves fail instead of duplicating a number.
+- Read: team. No client writes. `saveRevision` and `restoreRevision` (editor). At most 50 per article; the oldest are pruned.
+
+### 3.7b `tags` and `article_tags`
+
+| `tags` column | Type | Flags | Notes |
+|---|---|---|---|
+| `universeId` | T | Req, Imm | teamField |
+| `name` | T plain | Req | ≤ 40, first spelling wins |
+| `slug` | T plain | Req | `uniqueOn: ['universeId','slug']` |
+
+| `article_tags` column | Type | Flags | Notes |
+|---|---|---|---|
+| `universeId` | T | Req, Imm | teamField |
+| `articleId` | T | Req, Imm | Same universe as the tag (checked in `setArticleTags`) |
+| `tagId` | T | Req, Imm | `uniqueOn: ['articleId','tagId']` |
+
+- Read: team. No client writes. `setArticleTags` (replace an article's tags, ≤ 20) and `deleteTag` (editor).
+
 ### 3.8 `usage` (spend caps)
 
 | Column | Type | Flags |
@@ -219,17 +260,20 @@ These are the drop-in `AI_CHATS_SCHEMA` / `AI_MESSAGES_SCHEMA`, unchanged: owner
 
 1. Every `universeId` in params must match a universe where the caller has an `active` membership with the required role.
 2. Every referenced id (article, category, link target) must belong to **the same** universe.
-3. A category `parentId` must be a top-level category (depth ≤ 2). A category cannot be its own parent.
+3. A category `parentId` must be in the same universe, must not create a cycle, and the tree stays within 5 levels.
 4. Slugs are generated server-side. Collisions get a `-2`, `-3`, … suffix.
 5. **Deletes cascade inside actions.** `tools.deleteWhere` is bounded at 500 rows per call, so the action loops until fewer than the limit are deleted.
-   - Delete article → its links (both directions) and its references.
-   - Delete category → set `categoryId` to null on its articles, and move child categories to the top level.
-   - Delete universe → links, references, articles, categories, memberships, then the universe.
+   - Delete article → first erase its Yjs body and verify it is empty (ADR-018), then its links (both directions), references, tag joins and revisions.
+   - Delete category → clear `categoryId` on its articles, and move child categories up to its parent (renaming on a name clash).
+   - Delete tag → its joins.
+   - Delete universe → erase every article body first (ADR-018), then tag joins, tags, revisions, links, references, articles, categories, the universe, then memberships.
+   - Article ids are `crypto.randomUUID()` and are never reused.
+7. A row addressed by id (category, tag, link, revision) is authorized against the universe **the row** belongs to, never a universe id from the params (`requireOwned`, `requireArticle`). Ids from another universe answer "not found", exactly like ids that do not exist.
 6. `editorIds` fan-out runs on role changes. The actions that add or remove editors update the universe and all its articles.
 
 ## 5. Indexing and query patterns
 
-The DO filters in SQLite. Typical client queries:
+The DO filters in SQLite. The SDK creates a unique index for each `uniqueOn` (slugs, memberships, links, tag joins, revision numbers) and offers no other index configuration. All of an app's records live in one DO, and the expected size (thousands of rows per universe) is well within a full scan. Revisit if a universe passes ~10k articles. Typical client queries:
 - `useQuery('articles', { where: { universeId } })`: the whole universe index, live. This is fine up to about 1k articles; paginate later.
 - `useQuery('article_links', { where: { fromArticleId } })` and `{ where: { toArticleId } }`: outgoing links and backlinks.
 - `useQuery('team_members', { where: { TeamId } })` and `{ where: { UserId: me } }` for "my universes".
@@ -239,3 +283,25 @@ The DO filters in SQLite. Typical client queries:
 - Additive changes (new optional columns) are safe on deploy.
 - Renames and removals, or tightening a `select` or `required`, are breaking. Record them as an ADR, include a data backfill action, and verify in the release ledger (`deepspace releases`).
 - `lintSchema()` must return `[]` for every schema. This is enforced by a Vitest test.
+
+## 7. Mapping from the Supabase-style brief
+
+| Brief | Mythos on DeepSpace |
+|---|---|
+| `profiles` tied to Supabase Auth | The scaffold's `users` collection, maintained by DeepSpace auth (id, name, imageUrl). Members see each other's public identity through the roster |
+| `universes` | `universes` (id, name, slug, description, cover image, owner, visibility; `createdAt`/`updatedAt` come from the record envelope) |
+| `universe_members` | `team_members` (`TeamId`, `UserId`, `Status`, `role`). The SDK requires this name and spelling (ADR-016) |
+| `articles` | `articles`; rich-text body = Yjs field, rich-text JSON snapshots in `article_revisions` (ADR-017) |
+| `categories` | `categories` |
+| `tags`, `article_tags` | `tags`, `article_tags` |
+| `article_links` | `article_links` with 17 typed relationships (lives in, member of, created/created by, located in, related to, participated in, …) |
+| `article_revisions` | `article_revisions` |
+| SQL migrations | `src/schemas/mythos-schemas.ts`, applied on deploy |
+| Foreign keys | Checked in actions (same-universe rule, §4) |
+| RLS policies | Collection permissions (§2) plus the role checks in actions |
+| Typed interfaces | `src/domain/records.ts` |
+| Server / client utilities | Server: `src/server/mythos/{action,store,membership}.ts`. Client: `src/lib/actions.ts` and `src/features/universes/hooks.ts` |
+
+## 8. Seed data (local development)
+
+`seedExampleUniverse` builds "The Shattered Realms" (4 categories, 5 articles, tags, 6 relationships, one revision per article) by calling the real actions as the caller, so seed rows pass the same validation and role checks as user input. It refuses to run when the worker has the production `PLATFORM_WORKER` binding. The backend test (`tests/mythos-backend.spec.ts`) uses it.

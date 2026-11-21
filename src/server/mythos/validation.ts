@@ -6,7 +6,14 @@
  */
 
 import { z } from 'zod'
-import { ARTICLE_TYPES, ASSIGNABLE_ROLES, LIMITS } from '../../domain/mythos'
+import {
+  ARTICLE_TYPES,
+  ASSIGNABLE_ROLES,
+  LIMITS,
+  LINK_TYPES,
+  UNIVERSE_VISIBILITIES,
+} from '../../domain/mythos'
+import { richTextDocSchema } from './richtext'
 
 /** Record ids: UUIDs or SDK-generated ids. Never free text. */
 export const recordIdSchema = z
@@ -74,6 +81,92 @@ export const renameArticleSchema = z.object({
 })
 
 export const articleIdSchema = z.object({ articleId: recordIdSchema })
+
+export const setArticleInfoboxSchema = z.object({
+  articleId: recordIdSchema,
+  infobox: z
+    .array(
+      z.object({
+        key: requiredText(LIMITS.infoboxKey, 'Infobox label'),
+        value: trimmed(LIMITS.infoboxValue, 'Infobox value'),
+      }),
+    )
+    .max(LIMITS.infoboxEntries, `At most ${LIMITS.infoboxEntries} infobox rows`),
+})
+
+// ── Universe settings ─────────────────────────────────────────────────────
+
+export const updateUniverseSettingsSchema = updateUniverseSchema
+  .extend({ visibility: z.enum(UNIVERSE_VISIBILITIES).optional() })
+  .refine(
+    (v) => Object.keys(v).some((k) => k !== 'universeId'),
+    'Nothing to update',
+  )
+
+/** Typing the universe's name is the confirmation for deleting it. */
+export const deleteUniverseSchema = z.object({
+  universeId: recordIdSchema,
+  confirmName: z.string().max(LIMITS.universeName),
+})
+
+// ── Categories ────────────────────────────────────────────────────────────
+
+/** '' means "no category" / "top level". */
+const optionalId = z.union([z.literal(''), recordIdSchema])
+
+export const createCategorySchema = z.object({
+  universeId: recordIdSchema,
+  name: requiredText(LIMITS.categoryName, 'Category name'),
+  parentId: optionalId.optional().default(''),
+})
+
+export const updateCategorySchema = z.object({
+  categoryId: recordIdSchema,
+  name: requiredText(LIMITS.categoryName, 'Category name').optional(),
+  parentId: optionalId.optional(),
+  sortOrder: z.number().int().min(0).max(100_000).optional(),
+})
+
+export const categoryIdSchema = z.object({ categoryId: recordIdSchema })
+
+export const setArticleCategorySchema = z.object({
+  articleId: recordIdSchema,
+  categoryId: optionalId,
+})
+
+// ── Tags ──────────────────────────────────────────────────────────────────
+
+const tagName = requiredText(LIMITS.tag, 'Tag')
+
+export const setArticleTagsSchema = z.object({
+  articleId: recordIdSchema,
+  tags: z.array(tagName).max(LIMITS.tags, `At most ${LIMITS.tags} tags per article`),
+})
+
+export const tagIdSchema = z.object({ tagId: recordIdSchema })
+
+// ── Relationships ─────────────────────────────────────────────────────────
+
+export const createLinkSchema = z
+  .object({
+    fromArticleId: recordIdSchema,
+    toArticleId: recordIdSchema,
+    type: z.enum(LINK_TYPES),
+    note: trimmed(LIMITS.linkNote, 'Note').optional().default(''),
+  })
+  .refine((v) => v.fromArticleId !== v.toArticleId, 'An article cannot be linked to itself')
+
+export const linkIdSchema = z.object({ linkId: recordIdSchema })
+
+// ── Revisions ─────────────────────────────────────────────────────────────
+
+export const saveRevisionSchema = z.object({
+  articleId: recordIdSchema,
+  content: richTextDocSchema,
+  note: trimmed(LIMITS.revisionNote, 'Note').optional().default(''),
+})
+
+export const revisionIdSchema = z.object({ revisionId: recordIdSchema })
 
 /** Formats the first Zod issue as a user-facing sentence. */
 export function firstIssue(error: z.ZodError): string {

@@ -87,3 +87,21 @@ export async function getMembership(
 export function listMemberships(tools: ActionTools, universeId: string) {
   return queryAll<TeamMemberData>(tools, COLLECTIONS.teamMembers, { where: { TeamId: universeId } })
 }
+
+/**
+ * Deletes every `where`-matching row, page by page (one deleteWhere call is
+ * capped at 500). Callers must already have authorized the universe.
+ */
+export async function drain(
+  tools: ActionTools,
+  collection: string,
+  where: Record<string, unknown>,
+): Promise<number> {
+  const LIMIT = 500
+  let total = 0
+  for (;;) {
+    const res = await mustSucceed(tools.deleteWhere(collection, where, LIMIT), `Deleting ${collection}`)
+    total += res.deleted
+    if (res.deleted < LIMIT) return total
+  }
+}

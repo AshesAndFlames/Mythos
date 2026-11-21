@@ -21,9 +21,13 @@ import type { CollectionSchema } from 'deepspace/schema'
 import { schemas } from '../schemas'
 import {
   articleLinksSchema,
+  articleReferencesSchema,
+  articleRevisionsSchema,
   articlesSchema,
+  articleTagsSchema,
   categoriesSchema,
   mythosSchemas,
+  tagsSchema,
   teamMembersSchema,
   universesSchema,
   usageSchema,
@@ -126,11 +130,18 @@ describe('articles: protected fields', () => {
 
   it('an editor may change content fields', () => {
     expect(
-      checkFieldPermissions(articlesSchema, MEMBER, { summary: 'A knight', tags: ['order'] }, existing),
+      checkFieldPermissions(
+        articlesSchema,
+        MEMBER,
+        { summary: 'A knight', type: 'faction', status: 'published', coverImageKey: 'k' },
+        existing,
+      ),
     ).toBeNull()
   })
 
-  it.each(['editorIds', 'universeId', 'ownerId', 'slug', 'authorId'])(
+  // categoryId points at another record and title drives the unique slug,
+  // so both change only through actions that check the universe.
+  it.each(['editorIds', 'universeId', 'ownerId', 'slug', 'authorId', 'categoryId', 'title', 'infobox'])(
     'a client cannot change %s',
     (field) => {
       const value = field === 'editorIds' ? [OWNER, EDITOR, VIEWER] : 'forged'
@@ -147,6 +158,14 @@ describe('universe-owned collections are read-only to clients', () => {
     ['team_members', teamMembersSchema, { TeamId: UNIVERSE_A, UserId: EDITOR, role: 'editor' }],
     ['categories', categoriesSchema, { universeId: UNIVERSE_A, name: 'Kingdoms' }],
     ['article_links', articleLinksSchema, { universeId: UNIVERSE_A, fromArticleId: 'a', toArticleId: 'b' }],
+    ['article_references', articleReferencesSchema, { universeId: UNIVERSE_A, articleId: 'a', url: 'https://x' }],
+    ['tags', tagsSchema, { universeId: UNIVERSE_A, name: 'Knight', slug: 'knight' }],
+    ['article_tags', articleTagsSchema, { universeId: UNIVERSE_A, articleId: 'a', tagId: 't' }],
+    [
+      'article_revisions',
+      articleRevisionsSchema,
+      { universeId: UNIVERSE_A, articleId: 'a', number: 1, title: 'Aria', content: { type: 'doc' } },
+    ],
   ]
 
   it.each(cases)('%s: members read, outsiders do not', (_n, schema, data) => {
@@ -164,6 +183,34 @@ describe('universe-owned collections are read-only to clients', () => {
 
   it('nobody can add themselves to a universe', () => {
     expect(canCreate(teamMembersSchema, MEMBER)).toBe(false)
+  })
+})
+
+describe('every universe-owned collection is scoped by its universe', () => {
+  it.each(mythosSchemas.filter((s) => s.name !== 'usage').map((s) => [s.name, s] as const))(
+    '%s has a team field, denies anonymous and app viewers, and forbids client creates',
+    (_n, schema) => {
+      expect(schema.teamField).toBeTruthy()
+      expect(schema.permissions['*']?.read).toBe(false)
+      expect(schema.permissions.viewer?.read).toBe(false)
+      expect(schema.permissions.member?.create).toBe(false)
+    },
+  )
+
+  it('a member of universe B cannot read universe A rows of any kind', () => {
+    for (const schema of mythosSchemas) {
+      if (!schema.teamField) continue
+      const r = row({ [schema.teamField]: UNIVERSE_A })
+      expect(canRead(schema, MEMBER, r, OUTSIDER, ctx)).toBe(false)
+    }
+  })
+
+  it('a removed member cannot read rows even though the system created them', () => {
+    const none = { isTeamMember: () => false }
+    for (const schema of mythosSchemas) {
+      if (!schema.teamField) continue
+      expect(canRead(schema, MEMBER, row({ [schema.teamField]: UNIVERSE_A }), VIEWER, none)).toBe(false)
+    }
   })
 })
 
