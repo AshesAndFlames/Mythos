@@ -121,6 +121,8 @@ export const deleteUniverse = mythosAction(
       COLLECTIONS.articleReferences,
       COLLECTIONS.articles,
       COLLECTIONS.categories,
+      COLLECTIONS.activity,
+      COLLECTIONS.invitations,
     ]) {
       await drain(system, collection, { universeId })
     }

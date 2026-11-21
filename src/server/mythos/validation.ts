@@ -59,10 +59,20 @@ export const universeIdSchema = z.object({ universeId: recordIdSchema })
 
 export const inviteMemberSchema = z.object({
   universeId: recordIdSchema,
-  email: z.string().trim().toLowerCase().email('Enter a valid email address').max(320),
+  email: z.string().trim().toLowerCase().email('Enter a valid email address').max(LIMITS.email),
   role: z.enum(ASSIGNABLE_ROLES),
 })
 export type InviteMemberInput = z.input<typeof inviteMemberSchema>
+
+export const invitationIdSchema = z.object({ invitationId: recordIdSchema })
+
+export const respondToInvitationSchema = z.object({
+  invitationId: recordIdSchema,
+  accept: z.boolean(),
+})
+
+/** Actions that take no input still validate that they got none. */
+export const noParamsSchema = z.object({}).strict()
 
 export const setMemberRoleSchema = z.object({
   universeId: recordIdSchema,

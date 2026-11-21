@@ -43,12 +43,11 @@ test('universe roles are enforced by the server', async ({ users }) => {
   await expect(alice.page.getByTestId('universe-name')).toHaveText(universeName, { timeout: 20_000 })
   const universeUrl = new URL(alice.page.url()).pathname
   const universeId = universeUrl.split('/').pop() as string
-  // The owner's universe rail offers Settings (non-owners see "Members").
-  const universeSettings = alice.page.locator(`a[href="${universeUrl}/settings"]`)
-  await expect(universeSettings).toHaveText('Settings')
+  // The owner's universe rail offers Settings and Members.
+  await expect(alice.page.locator(`a[href="${universeUrl}/settings"]`)).toHaveText('Settings')
 
-  // ── Alice invites Bob (editor) and Carol (viewer) ───────────────────────
-  await universeSettings.click()
+  // ── Alice invites Bob (editor) and Carol (viewer); both accept ──────────
+  await alice.page.locator(`a[href="${universeUrl}/members"]`).click()
   for (const [user, role] of [
     [bob, 'editor'],
     [carol, 'viewer'],
@@ -58,7 +57,14 @@ test('universe roles are enforced by the server', async ({ users }) => {
     await alice.page.getByRole('button', { name: 'Invite' }).click()
     await expect(alice.page.getByText(`as ${role}.`)).toBeVisible({ timeout: 20_000 })
   }
-  await expect(alice.page.getByTestId('member-row')).toHaveCount(3)
+  await expect(alice.page.getByTestId('pending-invitation')).toHaveCount(2)
+  for (const user of [bob, carol]) {
+    await openUniverses(user)
+    const invitation = user.page.getByTestId('my-invitation').filter({ hasText: universeName })
+    await invitation.getByRole('button', { name: 'Accept' }).click()
+    await expect(user.page.getByTestId('universe-name')).toHaveText(universeName, { timeout: 20_000 })
+  }
+  await expect(alice.page.getByTestId('member-row')).toHaveCount(3, { timeout: 20_000 })
 
   // ── Alice creates an article ────────────────────────────────────────────
   await alice.page.getByTestId('new-article-button').click()
@@ -139,7 +145,7 @@ test('universe roles are enforced by the server', async ({ users }) => {
   expect(invalid.body.success).toBe(false)
 
   // ── Demotion takes effect: Bob becomes a viewer ─────────────────────────
-  await alice.page.goto(`${universeUrl}/settings`)
+  await alice.page.goto(`${universeUrl}/members`)
   await alice.page.getByLabel(/Role for Bob/).selectOption('viewer')
   await expect(alice.page.getByLabel(/Role for Bob/)).toHaveValue('viewer', { timeout: 20_000 })
   await expect

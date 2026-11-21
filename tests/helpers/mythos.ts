@@ -15,6 +15,14 @@ export async function tokenFor(page: Page): Promise<string> {
   return body.token as string
 }
 
+/** The signed-in account's user id (the verified token's subject). */
+export async function userIdOf(page: Page): Promise<string> {
+  const token = await tokenFor(page)
+  const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8')) as { sub?: string }
+  expect(payload.sub).toBeTruthy()
+  return payload.sub as string
+}
+
 export async function openDashboard(user: MultiplayerUser) {
   await user.page.goto('/universes')
   await expect(user.page.getByRole('heading', { name: 'Your universes' })).toBeVisible({ timeout: 20_000 })
@@ -31,6 +39,16 @@ export async function caller(user: MultiplayerUser) {
     })
     return (await res.json()) as ActionResult
   }
+}
+
+type Caller = (name: string, params: object) => Promise<ActionResult>
+
+/** The owner invites `email`, and the invitee accepts: an active membership. */
+export async function addMember(asOwner: Caller, asInvitee: Caller, universeId: string, email: string, role: 'editor' | 'viewer') {
+  const invited = await asOwner('inviteMember', { universeId, email, role })
+  expect(invited.error, 'invite refused').toBeUndefined()
+  const accepted = await asInvitee('respondToInvitation', { invitationId: invited.data?.invitationId, accept: true })
+  expect(accepted.error, 'accept refused').toBeUndefined()
 }
 
 /** The app id the local worker serves (wrangler.toml is its source of truth). */

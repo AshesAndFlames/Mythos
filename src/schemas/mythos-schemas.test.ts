@@ -20,12 +20,14 @@ import {
 import type { CollectionSchema } from 'deepspace/schema'
 import { schemas } from '../schemas'
 import {
+  activitySchema,
   articleLinksSchema,
   articleReferencesSchema,
   articleRevisionsSchema,
   articlesSchema,
   articleTagsSchema,
   categoriesSchema,
+  invitationsSchema,
   mythosSchemas,
   tagsSchema,
   teamMembersSchema,
@@ -133,7 +135,7 @@ describe('articles: protected fields', () => {
       checkFieldPermissions(
         articlesSchema,
         MEMBER,
-        { summary: 'A knight', type: 'faction', status: 'published' },
+        { summary: 'A knight', type: 'faction' },
         existing,
       ),
     ).toBeNull()
@@ -141,7 +143,7 @@ describe('articles: protected fields', () => {
 
   // categoryId points at another record and title drives the unique slug,
   // so both change only through actions that check the universe.
-  it.each(['editorIds', 'universeId', 'ownerId', 'slug', 'authorId', 'categoryId', 'title', 'infobox', 'coverImageKey'])(
+  it.each(['editorIds', 'universeId', 'ownerId', 'slug', 'authorId', 'categoryId', 'title', 'infobox', 'coverImageKey', 'status'])(
     'a client cannot change %s',
     (field) => {
       const value = field === 'editorIds' ? [OWNER, EDITOR, VIEWER] : 'forged'
@@ -187,7 +189,8 @@ describe('universe-owned collections are read-only to clients', () => {
 })
 
 describe('every universe-owned collection is scoped by its universe', () => {
-  it.each(mythosSchemas.filter((s) => s.name !== 'usage').map((s) => [s.name, s] as const))(
+  // usage (per-user counters) and invitations (no client access at all) are tested below.
+  it.each(mythosSchemas.filter((s) => s.name !== 'usage' && s.name !== 'invitations').map((s) => [s.name, s] as const))(
     '%s has a team field, denies anonymous and app viewers, and forbids client creates',
     (_n, schema) => {
       expect(schema.teamField).toBeTruthy()
@@ -221,3 +224,30 @@ describe('usage counters', () => {
     expect(canCreate(usageSchema, MEMBER)).toBe(false)
   })
 })
+
+describe('invitations are never readable or writable by clients', () => {
+  const invitation = row({ universeId: UNIVERSE_A, email: 'friend@example.com', role: 'editor', status: 'pending' })
+
+  it.each([OWNER, EDITOR, VIEWER, OUTSIDER])('%s cannot read, create, change or delete one', (user) => {
+    expect(canRead(invitationsSchema, MEMBER, invitation, user, ctx)).toBe(false)
+    expect(canCreate(invitationsSchema, MEMBER)).toBe(false)
+    expect(canUpdate(invitationsSchema, MEMBER, invitation, user, ctx)).toBe(false)
+    expect(canDelete(invitationsSchema, MEMBER, invitation, user, ctx)).toBe(false)
+  })
+})
+
+describe('activity is read by members and written by nobody but actions', () => {
+  const entry = row({ universeId: UNIVERSE_A, kind: 'article_created', actorId: EDITOR, at: '2026-11-20T00:00:00Z' })
+
+  it('members of the universe read it; outsiders do not', () => {
+    for (const user of [OWNER, EDITOR, VIEWER]) expect(canRead(activitySchema, MEMBER, entry, user, ctx)).toBe(true)
+    expect(canRead(activitySchema, MEMBER, entry, OUTSIDER, ctx)).toBe(false)
+  })
+
+  it('not even its actor can create, change or delete an entry', () => {
+    expect(canCreate(activitySchema, MEMBER)).toBe(false)
+    expect(canUpdate(activitySchema, MEMBER, entry, EDITOR, ctx)).toBe(false)
+    expect(canDelete(activitySchema, MEMBER, entry, OWNER, ctx)).toBe(false)
+  })
+})
+

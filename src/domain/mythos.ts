@@ -42,6 +42,20 @@ export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number]
 
 export const MEMBER_STATUSES = ['active', 'removed'] as const
 
+/** An invitation waits for the invitee, who accepts or declines it. */
+export const INVITATION_STATUSES = ['pending', 'accepted', 'declined'] as const
+export type InvitationStatus = (typeof INVITATION_STATUSES)[number]
+
+/** What the activity feed records. Written only by server actions. */
+export const ACTIVITY_KINDS = [
+  'article_created',
+  'article_updated',
+  'article_published',
+  'member_invited',
+  'member_joined',
+] as const
+export type ActivityKind = (typeof ACTIVITY_KINDS)[number]
+
 /**
  * Universe visibility. Only 'private' exists today: Mythos is a members-only
  * app (ADR-010). Public universes need their own read path (ADR-017).
@@ -90,6 +104,9 @@ export const LIMITS = {
   categoryDepth: 5,
   linkNote: 500,
   slug: 120,
+  email: 320,
+  /** Pending invitations one universe may hold at once. */
+  pendingInvitations: 50,
   /** Universes one user may own. */
   universesPerOwner: 25,
   /** Oldest revisions beyond this are pruned when a new one is saved. */
@@ -113,6 +130,8 @@ export const COLLECTIONS = {
   tags: 'tags',
   articleTags: 'article_tags',
   usage: 'usage',
+  invitations: 'invitations',
+  activity: 'activity',
 } as const
 
 /**

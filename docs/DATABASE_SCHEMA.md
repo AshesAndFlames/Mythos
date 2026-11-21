@@ -52,7 +52,7 @@ ai-chats / ai-messages (drop-in, owner-only)
 | `collaboratorsField: 'editorIds'` + `update: 'collaborator'` | **Editor vs. viewer.** Only the owner and editors can update fields or type in the Yjs body |
 | `ownerField: 'ownerId'` (universe owner) | The owner always passes `'collaborator'` |
 | `create: false` for `member` | Rows are created only by server actions that check the universe role (`create` is boolean-only and cannot check the team) |
-| `writableFields` | Articles: clients may change only `summary`, `type`, `status`. Everything that references another record, must stay unique, is JSON, or must match a pattern (`coverImageKey`) goes through an action (`saveArticle` covers them all) |
+| `writableFields` | Articles: clients may change only `summary` and `type` (`status` moved to `saveArticle` in ADR-021). Everything that references another record, must stay unique, is JSON, or must match a pattern (`coverImageKey`) goes through an action (`saveArticle` covers them all) |
 | `maxLength` | Every plain-text column. JSON columns cannot take it (the DO rejects non-strings), so they are action-only and Zod-bounded |
 | `uniqueOn` | Uniqueness of slugs, memberships, links and usage counters, enforced in the DO |
 
@@ -112,7 +112,7 @@ permissions: {
 }
 ```
 
-Removal **deletes** the row (rather than setting `removed`). Re-inviting then works within `uniqueOn`. `status` stays for future "invited" support.
+Removal **deletes** the row (rather than setting `removed`). Re-inviting then works within `uniqueOn`. A membership is created only when an invitee accepts an invitation (`invitations`, §3.10); `invitedBy` records who invited them.
 
 ### 3.4 `categories`
 
@@ -138,7 +138,7 @@ Removal **deletes** the row (rather than setting `removed`). Re-inviting then wo
 | `body` | (Yjs field) | | Not a column. `useYjsField('articles', id, 'body')` persists it in the RecordRoom; Tiptap binds the `Y.XmlFragment` named `body` (ADR-019) |
 | `infobox` | T json | | `Array<{ key: string; value: string }>`, ≤ 30 entries. Written only by `setArticleInfobox` |
 | `categoryId` | T plain | | '' or a category in the same universe. Written only by `setArticleCategory` / `saveArticle` |
-| `status` | T select `draft,published` | Req, default `draft` | Within-universe label in MVP |
+| `status` | T select `draft,published` | Req, default `draft` | Within-universe label. Written only by actions (`saveArticle`), so publishing is always recorded (ADR-021) |
 | `coverImageKey` | T plain | | `''` or `covers/<uuid>.<ext>`. Written only by `saveArticle` (ADR-019) |
 | `editorIds` | T json | | Server-maintained |
 | `ownerId` | T plain | Imm | = universe owner |
@@ -149,7 +149,7 @@ Removal **deletes** the row (rather than setting `removed`). Re-inviting then wo
 ```ts
 permissions: {
   member: { read: 'team', create: false, update: 'collaborator', delete: false,
-            writableFields: ['summary','type','status'] },
+            writableFields: ['summary','type'] },
   admin:  { read: true, create: true, update: true, delete: true },
 }
 ```
@@ -256,6 +256,35 @@ Relationship types and inverse labels (the inverse is computed in the UI from on
 ### 3.9 `ai-chats`, `ai-messages`
 
 These are the drop-in `AI_CHATS_SCHEMA` / `AI_MESSAGES_SCHEMA`, unchanged: owner-only reads, `create: false`. The universe context for a chat is passed per request (see ARCHITECTURE.md §6).
+
+### 3.10 `invitations` (ADR-021)
+
+| Column | Type | Flags | Notes |
+|---|---|---|---|
+| `universeId` | T plain | Req, Imm | |
+| `email` | T plain ≤320 | Req, Imm | Lower-cased. Matched against the invitee's account email, which the system assigns from the verified sign-in |
+| `role` | T select `editor,viewer` | Req | Changed when the owner re-invites the same address |
+| `invitedBy` | T plain | Req | Latest inviter |
+| `status` | T select `pending,accepted,declined` | Req | |
+
+- No `teamField`, `uniqueOn: ['universeId','email']`.
+- Permissions: **no client role** may read or write (`'*'`, `viewer`, `member`: all false; `admin`: all). An invitee is not a member yet, and other members must not see invitees' emails. Read only through `listInvitations` (owner) and `myInvitations` (the invitee, matched by account email).
+- At most `LIMITS.pendingInvitations` (50) pending per universe. Revoking deletes the row; answering sets `status`. Deleting the universe drains them.
+
+### 3.11 `activity` (ADR-021)
+
+| Column | Type | Flags | Notes |
+|---|---|---|---|
+| `universeId` | T plain | Req, Imm | |
+| `kind` | T select `article_created,article_updated,article_published,member_invited,member_joined` | Req, Imm | |
+| `actorId` | T plain | Req, Imm | Who did it |
+| `subjectId` | T plain | Imm | Article id, or invitation id for `member_invited`; `''` when none |
+| `subjectTitle` | T plain ≤200 | | Snapshot: article title, or a masked email (`f•••@example.com`) |
+| `detail` | T plain ≤200 | | The role, for member entries |
+| `at` | T datetime | Req | When it happened. Repeated updates by one actor to one article within 15 minutes move this forward instead of adding a row |
+
+- `teamField: 'universeId'`, permissions `UNIVERSE_OWNED` (members read; no client writes). Rows are created by the system identity.
+- Article entries survive article deletion (the title is a snapshot); deleting the universe drains them.
 
 ## 4. Integrity rules enforced in server actions (Zod + lookups)
 

@@ -10,7 +10,15 @@ import {
 } from './articles'
 import { createCategory, deleteCategory, updateCategory } from './categories'
 import { createLink, deleteLink } from './links'
-import { inviteMember, removeMember, setMemberRole } from './members'
+import {
+  inviteMember,
+  listInvitations,
+  myInvitations,
+  removeMember,
+  respondToInvitation,
+  revokeInvitation,
+  setMemberRole,
+} from './members'
 import { restoreRevision, saveRevision } from './revisions'
 import { seedExampleUniverse } from './seed'
 import { deleteTag, setArticleTags } from './tags'
@@ -25,10 +33,15 @@ export const actions: Record<string, ActionHandler<Env>> = {
   createUniverse,
   updateUniverse,
   deleteUniverse,
-  // Membership (owner)
+  // Membership (owner; removeMember also lets a member leave)
   inviteMember,
+  listInvitations,
+  revokeInvitation,
   setMemberRole,
   removeMember,
+  // Invitations (the invitee, matched by account email)
+  myInvitations,
+  respondToInvitation,
   // Articles (editor)
   createArticle,
   renameArticle,

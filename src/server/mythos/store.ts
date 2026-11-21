@@ -14,6 +14,8 @@ export interface Envelope<T> {
   recordId: string
   data: T
   createdBy?: string
+  createdAt?: string
+  updatedAt?: string
 }
 
 export class StoreError extends Error {}

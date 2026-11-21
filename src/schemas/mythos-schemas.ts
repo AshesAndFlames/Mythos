@@ -26,7 +26,10 @@
 
 import type { CollectionSchema, ColumnDefinition, RolePermissions } from 'deepspace/schema'
 import {
+  ACTIVITY_KINDS,
   ARTICLE_STATUSES,
+  ASSIGNABLE_ROLES,
+  INVITATION_STATUSES,
   ARTICLE_TYPES,
   COLLECTIONS,
   LIMITS,
@@ -127,9 +130,10 @@ export const categoriesSchema: CollectionSchema = {
  * separate). Each is plain text bounded by `maxLength` or a select the DO
  * validates. `title` (slug uniqueness), `categoryId` (same-universe check),
  * `infobox` (JSON, needs Zod), `coverImageKey` (key pattern) and tags change
- * through actions (`saveArticle` covers them all).
+ * through actions (`saveArticle` covers them all). `status` too: publishing
+ * goes through `saveArticle`, which records it in the activity feed.
  */
-export const ARTICLE_CLIENT_WRITABLE_FIELDS = ['summary', 'type', 'status'] as const
+export const ARTICLE_CLIENT_WRITABLE_FIELDS = ['summary', 'type'] as const
 
 export const articlesSchema: CollectionSchema = {
   name: COLLECTIONS.articles,
@@ -266,6 +270,42 @@ export const usageSchema: CollectionSchema = {
   },
 }
 
+/**
+ * Invitations to a universe, addressed to an email. No client role reads or
+ * writes them: an invitee is not a member yet (so 'team' cannot cover them)
+ * and members other than the owner must not see invitees' emails. The
+ * owner-checked `listInvitations` and the invitee-checked `myInvitations`
+ * actions are the only read paths.
+ */
+export const invitationsSchema: CollectionSchema = {
+  name: COLLECTIONS.invitations,
+  columns: [
+    idColumn('universeId'),
+    text('email', LIMITS.email, { required: true, immutable: true }),
+    select('role', ASSIGNABLE_ROLES, { required: true }),
+    idColumn('invitedBy', { immutable: false }),
+    select('status', INVITATION_STATUSES, { required: true }),
+  ],
+  uniqueOn: ['universeId', 'email'],
+  permissions: { '*': NONE, viewer: NONE, member: NONE, admin: ADMIN_ALL },
+}
+
+/** The activity feed: readable by the universe's members, written only by actions. */
+export const activitySchema: CollectionSchema = {
+  name: COLLECTIONS.activity,
+  columns: [
+    idColumn('universeId'),
+    select('kind', ACTIVITY_KINDS, { required: true, immutable: true }),
+    idColumn('actorId'),
+    text('subjectId', ID_MAX, { default: '', immutable: true }),
+    text('subjectTitle', LIMITS.articleTitle, { default: '' }),
+    text('detail', 200, { default: '' }),
+    { name: 'at', storage: 'text', interpretation: { kind: 'datetime' }, required: true },
+  ],
+  teamField: 'universeId',
+  permissions: UNIVERSE_OWNED,
+}
+
 export const mythosSchemas: CollectionSchema[] = [
   universesSchema,
   teamMembersSchema,
@@ -277,4 +317,6 @@ export const mythosSchemas: CollectionSchema[] = [
   tagsSchema,
   articleTagsSchema,
   usageSchema,
+  invitationsSchema,
+  activitySchema,
 ]

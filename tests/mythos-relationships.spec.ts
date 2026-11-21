@@ -9,7 +9,7 @@
  * through the UI, and by cascade).
  */
 import { test, expect, loadAllTestAccounts } from 'deepspace/testing'
-import { caller, type ActionResult } from './helpers/mythos'
+import { addMember, caller, type ActionResult } from './helpers/mythos'
 
 const NAMES = ['Alice', 'Bob', 'Carol', 'Dave']
 const available = new Set(loadAllTestAccounts().map((a) => a.name))
@@ -36,8 +36,8 @@ test('relationships: creation, retrieval, authorization and deletion', async ({ 
   const B = ok(await asDave('createUniverse', { name: bName })).universeId
 
   try {
-    ok(await asAlice('inviteMember', { universeId: A, email: bob.email, role: 'editor' }))
-    ok(await asAlice('inviteMember', { universeId: A, email: carol.email, role: 'viewer' }))
+    await addMember(asAlice, asBob, A, bob.email, 'editor')
+    await addMember(asAlice, asCarol, A, carol.email, 'viewer')
 
     const art: Record<string, string> = {}
     for (const [key, title, type] of [

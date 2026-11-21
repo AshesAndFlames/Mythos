@@ -6,7 +6,7 @@
 
 import { useMemo, useState } from 'react'
 import { NavLink, Outlet, useParams } from 'react-router-dom'
-import { BookOpenText, Feather, LayoutDashboard, Settings2 } from 'lucide-react'
+import { BookOpenText, Feather, History, LayoutDashboard, Settings2, Users } from 'lucide-react'
 import { CoverImage } from '@/components/mythos/CoverImage'
 import { NewArticleDialog } from '@/components/mythos/Dialogs'
 import { PageSkeleton } from '@/components/mythos/Skeleton'
@@ -92,10 +92,20 @@ function UniverseRail({ context, canEdit }: { context: UniverseContext; canEdit:
           <BookOpenText className="size-4" aria-hidden />
           Library
         </NavLink>
-        <NavLink to={`${base}/settings`} className={linkClass}>
-          <Settings2 className="size-4" aria-hidden />
-          {role === 'owner' ? 'Settings' : 'Members'}
+        <NavLink to={`${base}/activity`} className={linkClass}>
+          <History className="size-4" aria-hidden />
+          Activity
         </NavLink>
+        <NavLink to={`${base}/members`} className={linkClass}>
+          <Users className="size-4" aria-hidden />
+          Members
+        </NavLink>
+        {role === 'owner' && (
+          <NavLink to={`${base}/settings`} className={linkClass}>
+            <Settings2 className="size-4" aria-hidden />
+            Settings
+          </NavLink>
+        )}
         {canEdit && (
           <button
             type="button"

@@ -2,6 +2,7 @@ import type { ActionTools } from 'deepspace/worker'
 import { COLLECTIONS } from '../domain/mythos'
 import type { ArticleData, CategoryData } from '../domain/records'
 import { mythosAction, UserError } from '../server/mythos/action'
+import { recordActivity } from '../server/mythos/activity'
 import { requireArticle, requireRole } from '../server/mythos/membership'
 import { lockAndEraseArticles } from '../server/mythos/scrub'
 import { drain, getRecord, mustSucceed, queryAll } from '../server/mythos/store'
@@ -22,6 +23,24 @@ async function takenSlugs(tools: ActionTools, universeId: string, exceptId?: str
     where: { universeId },
   })
   return new Set(articles.filter((a) => a.recordId !== exceptId).map((a) => a.data.slug))
+}
+
+/** Records an "updated" entry (folded with the same person's recent ones). */
+export function logUpdate(
+  tools: ActionTools,
+  system: ActionTools,
+  userId: string,
+  universeId: string,
+  articleId: string,
+  title: string,
+) {
+  return recordActivity(tools, system, {
+    universeId,
+    kind: 'article_updated',
+    actorId: userId,
+    subjectId: articleId,
+    subjectTitle: title,
+  })
 }
 
 /** Creates an article in a universe (editor or owner). */
@@ -50,6 +69,13 @@ export const createArticle = mythosAction(
     // reused, or the new article would inherit any stored body under that key.
     const articleId = crypto.randomUUID()
     await mustSucceed(system.create(COLLECTIONS.articles, { ...article }, articleId), 'Creating the article')
+    await recordActivity(tools, system, {
+      universeId: params.universeId,
+      kind: 'article_created',
+      actorId: userId,
+      subjectId: articleId,
+      subjectTitle: params.title,
+    })
     return { articleId, slug }
   },
 )
@@ -68,6 +94,7 @@ export const renameArticle = mythosAction(
       system.update(COLLECTIONS.articles, article.recordId, { title: params.title, slug }),
       'Renaming the article',
     )
+    await logUpdate(tools, system, userId, article.data.universeId, article.recordId, params.title)
     return { articleId: article.recordId, slug }
   },
 )
@@ -92,6 +119,7 @@ export const setArticleCategory = mythosAction(
       system.update(COLLECTIONS.articles, article.recordId, { categoryId: params.categoryId }),
       'Setting the category',
     )
+    await logUpdate(tools, system, userId, article.data.universeId, article.recordId, article.data.title)
     return { articleId: article.recordId, categoryId: params.categoryId }
   },
 )
@@ -139,6 +167,15 @@ export const saveArticle = mythosAction(
       params.content,
       params.note || (params.status === 'published' ? 'Published' : 'Draft saved'),
     )
+    // Publishing is its own entry; any other save is an update.
+    const publishing = params.status === 'published' && article.data.status !== 'published'
+    await recordActivity(tools, system, {
+      universeId,
+      kind: publishing ? 'article_published' : 'article_updated',
+      actorId: userId,
+      subjectId: articleId,
+      subjectTitle: params.title,
+    })
     return { articleId, slug, status: params.status, revision }
   },
 )
@@ -153,6 +190,7 @@ export const setArticleInfobox = mythosAction(
       system.update(COLLECTIONS.articles, article.recordId, { infobox: params.infobox }),
       'Saving the infobox',
     )
+    await logUpdate(tools, system, userId, article.data.universeId, article.recordId, article.data.title)
     return { articleId: article.recordId }
   },
 )

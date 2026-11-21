@@ -8,7 +8,7 @@
  * malformed content — and see the server refuse it.
  */
 import { test, expect, loadAllTestAccounts } from 'deepspace/testing'
-import { caller, hexOf, storedDocHex, typeBody, type ActionResult } from './helpers/mythos'
+import { addMember, caller, hexOf, storedDocHex, typeBody, type ActionResult } from './helpers/mythos'
 
 const NAMES = ['Alice', 'Bob', 'Carol', 'Dave']
 const available = new Set(loadAllTestAccounts().map((a) => a.name))
@@ -37,8 +37,8 @@ test('backend enforces universe boundaries and roles', async ({ users }) => {
   const A = seeded.universeId as string
   const articles = seeded.articleIds as Record<string, string>
   const categories = seeded.categoryIds as Record<string, string>
-  ok(await asAlice('inviteMember', { universeId: A, email: bob.email, role: 'editor' }))
-  ok(await asAlice('inviteMember', { universeId: A, email: carol.email, role: 'viewer' }))
+  await addMember(asAlice, asBob, A, bob.email, 'editor')
+  await addMember(asAlice, asCarol, A, carol.email, 'viewer')
 
   // ── Universe B: Dave's own, with an article, a category and a tag
   const bName = `Dave's world ${Date.now()}`
@@ -143,7 +143,7 @@ test('backend enforces universe boundaries and roles', async ({ users }) => {
   })
 
   await test.step('removing a member revokes their access', async () => {
-    await alice.page.goto(`/u/${A}/settings`)
+    await alice.page.goto(`/u/${A}/members`)
     const members = alice.page.getByTestId('member-row')
     await expect(members).toHaveCount(3, { timeout: 20_000 })
     await members.filter({ hasText: 'Carol' }).getByRole('button', { name: 'Remove' }).click()

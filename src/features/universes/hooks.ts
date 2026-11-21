@@ -11,6 +11,7 @@ import { useMemo } from 'react'
 import { useAuth, useQuery, useUsers } from 'deepspace'
 import { COLLECTIONS, type UniverseRole } from '../../domain/mythos'
 import type {
+  ActivityData,
   ArticleData,
   ArticleLinkData,
   ArticleRevisionData,
@@ -244,3 +245,23 @@ export function useArticleRevisions(universeId: string, articleId: string) {
   const revisions = useMemo(() => records.map(toRevision), [records])
   return { revisions, status }
 }
+
+// ── Activity ──────────────────────────────────────────────────────────────
+
+export type ActivityView = ActivityData & { id: string }
+
+/**
+ * Latest activity, newest first: one universe's, or (without `universeId`)
+ * every universe the caller belongs to. The RecordRoom sends members only.
+ */
+export function useActivity({ universeId, limit = 50 }: { universeId?: string; limit?: number } = {}) {
+  const { records, status } = useQuery<ActivityData>(COLLECTIONS.activity, {
+    ...(universeId ? { where: { universeId } } : {}),
+    orderBy: 'at',
+    orderDir: 'desc',
+    limit,
+  })
+  const entries = useMemo<ActivityView[]>(() => records.map((r) => ({ ...r.data, id: r.recordId })), [records])
+  return { entries, status }
+}
+

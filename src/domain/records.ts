@@ -4,8 +4,11 @@
  */
 
 import type {
+  ActivityKind,
   ArticleStatus,
   ArticleType,
+  AssignableRole,
+  InvitationStatus,
   LinkType,
   UniverseRole,
   UniverseVisibility,
@@ -138,3 +141,32 @@ export interface UsageData {
   kind: string
   count: number
 }
+
+/**
+ * A pending (or answered) invitation to a universe, addressed to an email.
+ * Clients never read these rows; owner- and invitee-checked actions do.
+ */
+export interface InvitationData {
+  universeId: string
+  /** Lower-cased. Matched against the invitee's account email (system-assigned). */
+  email: string
+  role: AssignableRole
+  invitedBy: string
+  status: InvitationStatus
+}
+
+/** One entry in a universe's activity feed. Written only by server actions. */
+export interface ActivityData {
+  universeId: string
+  kind: ActivityKind
+  actorId: string
+  /** The article (article_*) or invitation (member_*) the entry is about; '' when none. */
+  subjectId: string
+  /** Snapshot shown in the feed: an article title, or a masked email. Survives deletion. */
+  subjectTitle: string
+  /** Extra detail, e.g. the role for member entries. */
+  detail: string
+  /** When it happened (ISO). Repeated updates by one person move this forward. */
+  at: string
+}
+

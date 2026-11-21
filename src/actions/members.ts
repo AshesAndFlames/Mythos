@@ -1,12 +1,19 @@
-import { COLLECTIONS } from '../domain/mythos'
-import type { TeamMemberData } from '../domain/records'
+import type { ActionTools } from 'deepspace/worker'
+import { maskEmail } from '../domain/activity'
+import { COLLECTIONS, LIMITS, type AssignableRole } from '../domain/mythos'
+import type { InvitationData, TeamMemberData } from '../domain/records'
 import { mythosAction, UserError } from '../server/mythos/action'
-import { currentEditorIds, fanOutEditorIds, requireRole } from '../server/mythos/membership'
-import { getMembership, mustSucceed, queryAll } from '../server/mythos/store'
+import { recordActivity } from '../server/mythos/activity'
+import { AccessDenied, currentEditorIds, fanOutEditorIds, requireRole } from '../server/mythos/membership'
+import { getMembership, getRecord, getUniverse, mustSucceed, queryAll, type Envelope } from '../server/mythos/store'
 import {
+  invitationIdSchema,
   inviteMemberSchema,
+  noParamsSchema,
   removeMemberSchema,
+  respondToInvitationSchema,
   setMemberRoleSchema,
+  universeIdSchema,
 } from '../server/mythos/validation'
 
 interface UserRow {
@@ -15,58 +22,235 @@ interface UserRow {
 }
 
 /**
- * Adds an existing Mythos user to a universe as editor or viewer (owner only).
+ * The caller's account email, lower-cased. `email` on a users row is
+ * system-assigned from the verified sign-in (clients cannot change it), so
+ * it is safe to match invitations against.
+ */
+async function callerEmail(tools: ActionTools, userId: string): Promise<string> {
+  const me = await getRecord<UserRow>(tools, 'users', userId)
+  return (me?.data.email ?? '').trim().toLowerCase()
+}
+
+async function displayName(tools: ActionTools, userId: string): Promise<string> {
+  const row = await getRecord<UserRow>(tools, 'users', userId)
+  return row?.data.name || 'Someone'
+}
+
+/**
+ * Invites an email address to a universe as editor or viewer (owner only).
  *
- * The invitee is resolved from the app's own `users` collection, so they must
- * have signed in to Mythos once. Only their id and display name come back —
- * never a users row (which would carry their email).
+ * Creates a pending invitation; nothing changes for the invitee until they
+ * sign in with that email and accept it. Inviting an address that already
+ * has a pending invitation updates its role. The invitee does not need an
+ * account yet.
  */
 export const inviteMember = mythosAction(
   'inviteMember',
   inviteMemberSchema,
   async ({ userId, params, tools, system }) => {
     await requireRole(tools, userId, params.universeId, 'owner')
+    const email = params.email
 
-    const matches = await queryAll<UserRow>(tools, 'users', { where: { email: params.email } })
-    const invitee = matches[0]
-    if (!invitee) {
-      throw new UserError(
-        'No Mythos account uses that email yet. Ask them to sign in to Mythos once, then invite them again.',
-      )
-    }
-    if (invitee.recordId === userId) throw new UserError('You are already the owner of this universe.')
-
-    const existing = await getMembership(tools, params.universeId, invitee.recordId)
-    if (existing?.data.Status === 'active') {
-      throw new UserError('That person is already a member of this universe.')
+    if (email === (await callerEmail(tools, userId))) throw new UserError('You are already a member of this universe.')
+    const accounts = await queryAll<UserRow>(tools, 'users', { where: { email } })
+    for (const account of accounts) {
+      const membership = await getMembership(tools, params.universeId, account.recordId)
+      if (membership?.data.Status === 'active') throw new UserError('That person is already a member of this universe.')
     }
 
+    const invitations = await queryAll<InvitationData>(tools, COLLECTIONS.invitations, {
+      where: { universeId: params.universeId },
+    })
+    const existing = invitations.find((i) => i.data.email === email)
+    let invitationId: string
     if (existing) {
       await mustSucceed(
-        system.update(COLLECTIONS.teamMembers, existing.recordId, {
-          Status: 'active',
-          role: params.role,
-        }),
-        'Restoring the membership',
+        system.update(COLLECTIONS.invitations, existing.recordId, { role: params.role, status: 'pending', invitedBy: userId }),
+        'Updating the invitation',
       )
+      invitationId = existing.recordId
     } else {
-      const membership: TeamMemberData = {
-        TeamId: params.universeId,
-        UserId: invitee.recordId,
-        Status: 'active',
+      const pending = invitations.filter((i) => i.data.status === 'pending').length
+      if (pending >= LIMITS.pendingInvitations) {
+        throw new UserError(`This universe already has ${LIMITS.pendingInvitations} pending invitations. Revoke some first.`)
+      }
+      const invitation: InvitationData = {
+        universeId: params.universeId,
+        email,
         role: params.role,
         invitedBy: userId,
+        status: 'pending',
       }
-      await mustSucceed(
-        system.create(COLLECTIONS.teamMembers, { ...membership }),
-        'Creating the membership',
-      )
+      const created = await system.create(COLLECTIONS.invitations, { ...invitation })
+      if (!created.success) {
+        if (created.error?.startsWith('Duplicate:')) throw new UserError('That email was just invited. Refresh to see it.')
+        throw new Error(`Creating the invitation failed: ${created.error ?? 'unknown error'}`)
+      }
+      invitationId = created.data.recordId
     }
 
-    if (params.role === 'editor') {
-      await fanOutEditorIds(system, params.universeId, await currentEditorIds(tools, params.universeId))
+    await recordActivity(tools, system, {
+      universeId: params.universeId,
+      kind: 'member_invited',
+      actorId: userId,
+      subjectId: invitationId,
+      subjectTitle: maskEmail(email),
+      detail: params.role,
+    })
+    return { invitationId, email, role: params.role, updated: existing?.data.status === 'pending' }
+  },
+)
+
+export interface PendingInvitation {
+  invitationId: string
+  email: string
+  role: AssignableRole
+  invitedByName: string
+  createdAt: string
+}
+
+/** A universe's pending invitations, with full emails (owner only). */
+export const listInvitations = mythosAction(
+  'listInvitations',
+  universeIdSchema,
+  async ({ userId, params, tools }) => {
+    await requireRole(tools, userId, params.universeId, 'owner')
+    const rows = await queryAll<InvitationData>(tools, COLLECTIONS.invitations, {
+      where: { universeId: params.universeId, status: 'pending' },
+    })
+    const names = new Map<string, string>()
+    for (const r of rows) {
+      if (!names.has(r.data.invitedBy)) names.set(r.data.invitedBy, await displayName(tools, r.data.invitedBy))
     }
-    return { userId: invitee.recordId, name: invitee.data.name ?? '' }
+    const invitations: PendingInvitation[] = rows
+      .map((r) => ({
+        invitationId: r.recordId,
+        email: r.data.email,
+        role: r.data.role,
+        invitedByName: names.get(r.data.invitedBy) ?? 'Someone',
+        createdAt: r.createdAt ?? '',
+      }))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    return { invitations }
+  },
+)
+
+/** Withdraws a pending invitation (owner of its universe only). */
+export const revokeInvitation = mythosAction(
+  'revokeInvitation',
+  invitationIdSchema,
+  async ({ userId, params, tools, system }) => {
+    const invitation = await getRecord<InvitationData>(tools, COLLECTIONS.invitations, params.invitationId)
+    if (!invitation) throw new AccessDenied('Invitation not found')
+    try {
+      await requireRole(tools, userId, invitation.data.universeId, 'owner')
+    } catch (err) {
+      if (err instanceof AccessDenied && err.message === 'Universe not found') throw new AccessDenied('Invitation not found')
+      throw err
+    }
+    if (invitation.data.status !== 'pending') throw new UserError('That invitation was already answered.')
+    await mustSucceed(system.remove(COLLECTIONS.invitations, invitation.recordId), 'Revoking the invitation')
+    return { invitationId: invitation.recordId }
+  },
+)
+
+export interface MyInvitation {
+  invitationId: string
+  universeId: string
+  universeName: string
+  role: AssignableRole
+  invitedByName: string
+  createdAt: string
+}
+
+/** Pending invitations addressed to the caller's account email. */
+export const myInvitations = mythosAction('myInvitations', noParamsSchema, async ({ userId, tools }) => {
+  const email = await callerEmail(tools, userId)
+  if (!email) return { invitations: [] as MyInvitation[] }
+  const rows = await queryAll<InvitationData>(tools, COLLECTIONS.invitations, { where: { email, status: 'pending' } })
+  const invitations: MyInvitation[] = []
+  for (const r of rows) {
+    const universe = await getUniverse(tools, r.data.universeId)
+    if (!universe) continue
+    invitations.push({
+      invitationId: r.recordId,
+      universeId: r.data.universeId,
+      universeName: universe.data.name,
+      role: r.data.role,
+      invitedByName: await displayName(tools, r.data.invitedBy),
+      createdAt: r.createdAt ?? '',
+    })
+  }
+  invitations.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  return { invitations }
+})
+
+/**
+ * Activates (or reactivates) a membership. Returns the role the caller ends
+ * up with: an existing active member keeps their role, so accepting can
+ * never demote anyone (or touch the owner).
+ */
+async function joinUniverse(
+  tools: ActionTools,
+  system: ActionTools,
+  universeId: string,
+  userId: string,
+  role: AssignableRole,
+  invitedBy: string,
+): Promise<TeamMemberData['role']> {
+  const existing = await getMembership(tools, universeId, userId)
+  if (existing?.data.Status === 'active') return existing.data.role
+  if (existing) {
+    await mustSucceed(
+      system.update(COLLECTIONS.teamMembers, existing.recordId, { Status: 'active', role }),
+      'Restoring the membership',
+    )
+  } else {
+    const membership: TeamMemberData = { TeamId: universeId, UserId: userId, Status: 'active', role, invitedBy }
+    const created = await system.create(COLLECTIONS.teamMembers, { ...membership })
+    if (!created.success) {
+      // Accepted twice at the same instant: the unique rule kept one row.
+      const raced = await getMembership(tools, universeId, userId)
+      if (raced?.data.Status === 'active') return raced.data.role
+      throw new Error(`Creating the membership failed: ${created.error}`)
+    }
+  }
+  if (role === 'editor') await fanOutEditorIds(system, universeId, await currentEditorIds(tools, universeId))
+  return role
+}
+
+/**
+ * Accepts or declines an invitation addressed to the caller's account email.
+ * Any other invitation id — someone else's, answered, revoked, or made up —
+ * answers "not found".
+ */
+export const respondToInvitation = mythosAction(
+  'respondToInvitation',
+  respondToInvitationSchema,
+  async ({ userId, params, tools, system }) => {
+    const [invitation, email] = await Promise.all([
+      getRecord<InvitationData>(tools, COLLECTIONS.invitations, params.invitationId),
+      callerEmail(tools, userId),
+    ])
+    if (!invitation || invitation.data.status !== 'pending' || !email || invitation.data.email !== email) {
+      throw new AccessDenied('Invitation not found')
+    }
+    const universeId = invitation.data.universeId
+    const universe = await getUniverse(tools, universeId)
+    if (!universe) {
+      await mustSucceed(system.remove(COLLECTIONS.invitations, invitation.recordId), 'Clearing the invitation')
+      throw new UserError('That universe no longer exists.')
+    }
+
+    if (!params.accept) {
+      await mustSucceed(system.update(COLLECTIONS.invitations, invitation.recordId, { status: 'declined' }), 'Declining')
+      return { universeId, accepted: false as const }
+    }
+
+    const role = await joinUniverse(tools, system, universeId, userId, invitation.data.role, invitation.data.invitedBy)
+    await mustSucceed(system.update(COLLECTIONS.invitations, invitation.recordId, { status: 'accepted' }), 'Accepting')
+    await recordActivity(tools, system, { universeId, kind: 'member_joined', actorId: userId, detail: role })
+    return { universeId, universeName: universe.data.name, role, accepted: true as const }
   },
 )
 
@@ -102,7 +286,7 @@ export const removeMember = mythosAction(
     const leaving = params.userId === userId
     await requireRole(tools, userId, params.universeId, leaving ? 'viewer' : 'owner')
 
-    const target = await getMembership(tools, params.universeId, params.userId)
+    const target: Envelope<TeamMemberData> | null = await getMembership(tools, params.universeId, params.userId)
     if (!target || target.data.Status !== 'active') throw new UserError('That person is not a member.')
     if (target.data.role === 'owner') {
       throw new UserError(

@@ -2,6 +2,7 @@ import type { ActionTools } from 'deepspace/worker'
 import { COLLECTIONS, LIMITS } from '../domain/mythos'
 import type { ArticleRevisionData } from '../domain/records'
 import { mythosAction, UserError } from '../server/mythos/action'
+import { recordActivity } from '../server/mythos/activity'
 import { requireArticle, requireOwned } from '../server/mythos/membership'
 import { mustSucceed, queryAll } from '../server/mythos/store'
 import { revisionFingerprint } from '../server/mythos/richtext'
@@ -107,6 +108,13 @@ export const restoreRevision = mythosAction(
       )
     }
     await mustSucceed(system.update(COLLECTIONS.articles, article.recordId, patch), 'Restoring the version')
+    await recordActivity(tools, system, {
+      universeId: article.data.universeId,
+      kind: 'article_updated',
+      actorId: userId,
+      subjectId: article.recordId,
+      subjectTitle: revision.data.title,
+    })
     return {
       articleId: article.recordId,
       number: revision.data.number,

@@ -274,3 +274,24 @@ The user proposed recycling deleted articles' ids for new articles. That would h
 - Links created before this ADR may be stored in non-canonical order, or include a reverse duplicate of a symmetric type. Both still display correctly (the duplicate check compares canonical keys). Production data has not been checked; a reverse duplicate can be removed from the Connections section.
 - Visualizations are not built yet.
 
+## ADR-021: Invitations and the activity feed (Task 5)
+**Status:** **Accepted** (2026-11-20)
+
+**Context:** Task 5 asked for collaborative membership with invitation acceptance, owner-managed roles, and a basic activity feed. Before it, `inviteMember` added the person immediately, and only if they had already signed in to Mythos.
+
+**Decision:**
+1. **Invitations are addressed to an email and must be accepted.** `inviteMember` creates a pending row in `invitations`; nothing changes for the invitee until they accept. The invitee needs no account when invited. Re-inviting the same address updates its role.
+2. **The invitee is identified by account email.** `users.email` is system-assigned from the verified sign-in (the DO refuses client changes to it), so `myInvitations` and `respondToInvitation` match against it. Any invitation not addressed to the caller, or already answered, answers "Invitation not found".
+3. **No client reads `invitations`.** The DO cannot express "owner of this team", and `read: 'team'` would show invitees' emails to every member. Owners read them through `listInvitations`; invitees through `myInvitations`.
+4. **Accepting never demotes.** If the invitee is already an active member, accepting keeps their role. A concurrent double accept leaves one membership (the `team_members` unique rule).
+5. **Activity is a team-readable collection written only by actions:** article created, updated (`saveArticle`, `renameArticle`, `setArticleCategory`, `setArticleInfobox`, `setArticleTags`, `restoreRevision`), published (the save that moves a draft to published), member invited (with a masked email), and member joined. Updates by one person to one article within 15 minutes fold into one entry.
+6. **Publishing only through `saveArticle`.** `status` was removed from the article's client `writableFields` (a tightening, not a data change), so a client or the assistant cannot publish without the server recording it.
+7. **The feed is secondary to the change.** If writing an entry fails, the action's own change has succeeded; the failure is logged with context and the action still reports success.
+8. **Pages:** Members (everyone; owner manages invitations, roles and removal), Activity (everyone), Settings (owner only). The dashboard shows pending invitations and the cross-universe feed.
+
+**Consequences and limits:**
+- No invitation email is sent; the invitee sees it on their dashboard after signing in. Sending one would use the `email/send` integration (a paid call) behind the owner check and a per-user cap.
+- Live body edits (Yjs) and direct `summary`/`type` changes are not recorded; saving the article records an update.
+- Role changes, removals and article deletions are not in the feed (not requested).
+- The feed shows the latest 100 entries per universe; there is no paging or pruning yet.
+

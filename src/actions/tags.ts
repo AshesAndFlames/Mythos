@@ -2,6 +2,7 @@ import type { ActionTools } from 'deepspace/worker'
 import { COLLECTIONS } from '../domain/mythos'
 import type { ArticleTagData, TagData } from '../domain/records'
 import { mythosAction } from '../server/mythos/action'
+import { recordActivity } from '../server/mythos/activity'
 import { requireArticle, requireOwned } from '../server/mythos/membership'
 import { drain, mustSucceed, queryAll } from '../server/mythos/store'
 import { slugify } from '../server/mythos/slug'
@@ -61,6 +62,13 @@ export const setArticleTags = mythosAction(
   async ({ userId, params, tools, system }) => {
     const { article } = await requireArticle(tools, userId, params.articleId, 'editor')
     const tagIds = await applyArticleTags(tools, system, article.data.universeId, article.recordId, params.tags)
+    await recordActivity(tools, system, {
+      universeId: article.data.universeId,
+      kind: 'article_updated',
+      actorId: userId,
+      subjectId: article.recordId,
+      subjectTitle: article.data.title,
+    })
     return { articleId: article.recordId, tagIds }
   },
 )

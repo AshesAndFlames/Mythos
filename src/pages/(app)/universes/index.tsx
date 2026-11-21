@@ -1,7 +1,6 @@
-/** User dashboard: welcome, universes, recent activity, recently edited articles. */
+/** User dashboard: welcome, invitations, universes, recent activity, recently edited articles. */
 
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { Feather, Globe2, History, Plus } from 'lucide-react'
 import { useUser } from 'deepspace'
 import { Button, EmptyState } from '@/components/ui'
@@ -9,25 +8,17 @@ import { ArticleMiniCard, UniverseCard } from '@/components/mythos/Cards'
 import { CreateUniverseDialog } from '@/components/mythos/Dialogs'
 import { CardGridSkeleton, ListSkeleton } from '@/components/mythos/Skeleton'
 import { ErrorView } from '@/components/mythos/StatusViews'
-import { useMyUniverses, useRecentArticles, useRecentRevisions, useUserNames } from '@/features/universes/hooks'
-import { greeting, relativeTime } from '@/lib/format'
-
-interface ActivityItem {
-  id: string
-  at: string
-  who: string
-  verb: string
-  title: string
-  href: string
-  universeName: string
-}
+import { useActivity, useMyUniverses, useRecentArticles, useUserNames } from '@/features/universes/hooks'
+import { greeting } from '@/lib/format'
+import { ActivityFeed } from '@/components/mythos/ActivityFeed'
+import { InvitationsPanel } from '@/components/mythos/Invitations'
 
 export default function DashboardPage() {
   const { user } = useUser()
   const { universes, status } = useMyUniverses()
   // Every article the caller can read: counts per universe and the recent strip.
   const { articles, status: articleStatus } = useRecentArticles()
-  const { revisions, status: revisionStatus } = useRecentRevisions(15)
+  const { entries: activity, status: activityStatus } = useActivity({ limit: 12 })
   const names = useUserNames()
   const [creating, setCreating] = useState(false)
 
@@ -38,33 +29,7 @@ export default function DashboardPage() {
     return m
   }, [articles])
 
-  const activity = useMemo<ActivityItem[]>(() => {
-    const titleOf = new Map(articles.map((a) => [a.id, a.title]))
-    const items: ActivityItem[] = revisions
-      .filter((r) => universeName.has(r.universeId) && titleOf.has(r.articleId))
-      .map((r) => ({
-        id: `rev-${r.id}`,
-        at: r.createdAt,
-        who: names.get(r.authorId) ?? 'Someone',
-        verb: r.note === 'Published' ? 'published' : 'saved a version of',
-        title: titleOf.get(r.articleId) as string,
-        href: `/u/${r.universeId}/a/${r.articleId}`,
-        universeName: universeName.get(r.universeId) as string,
-      }))
-    for (const a of articles) {
-      if (!universeName.has(a.universeId)) continue
-      items.push({
-        id: `new-${a.id}`,
-        at: a.createdAt,
-        who: names.get(a.authorId) ?? 'Someone',
-        verb: 'started',
-        title: a.title,
-        href: `/u/${a.universeId}/a/${a.id}`,
-        universeName: universeName.get(a.universeId) as string,
-      })
-    }
-    return items.sort((x, y) => y.at.localeCompare(x.at)).slice(0, 10)
-  }, [revisions, articles, names, universeName])
+  const articleIds = useMemo(() => new Set(articles.map((a) => a.id)), [articles])
 
   const firstName = (user?.name ?? '').split(' ')[0]
 
@@ -92,6 +57,8 @@ export default function DashboardPage() {
         <div className="mythos-rule my-10" aria-hidden>
           ✦
         </div>
+
+        <InvitationsPanel />
 
         <div className="grid gap-12 @5xl:grid-cols-[minmax(0,1fr)_20rem]">
           <section aria-labelledby="universes-heading">
@@ -144,31 +111,16 @@ export default function DashboardPage() {
               <h2 id="activity-heading" className="mythos-eyebrow mb-3 flex items-center gap-2">
                 <History className="size-3.5" aria-hidden /> Recent activity
               </h2>
-              {revisionStatus === 'loading' || articleStatus === 'loading' ? (
+              {activityStatus === 'loading' || articleStatus === 'loading' ? (
                 <ListSkeleton rows={3} label="Loading activity…" />
-              ) : revisionStatus === 'error' ? (
+              ) : activityStatus === 'error' ? (
                 <p role="alert" className="text-sm text-destructive">
                   Activity could not be loaded.
                 </p>
               ) : activity.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Nothing has happened yet.</p>
               ) : (
-                <ol className="relative space-y-4 border-l border-border pl-4" data-testid="activity-feed">
-                  {activity.map((item) => (
-                    <li key={item.id} className="text-sm">
-                      <span className="absolute -left-[3px] mt-1.5 size-1.5 rounded-full bg-primary/70" aria-hidden />
-                      <p className="text-foreground">
-                        <span className="font-medium">{item.who}</span> {item.verb}{' '}
-                        <Link to={item.href} className="font-display text-base font-semibold text-primary hover:underline">
-                          {item.title}
-                        </Link>
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {item.universeName} · {relativeTime(item.at)}
-                      </p>
-                    </li>
-                  ))}
-                </ol>
+                <ActivityFeed entries={activity} names={names} articleIds={articleIds} universeNames={universeName} />
               )}
             </section>
           </div>
