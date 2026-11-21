@@ -1,7 +1,9 @@
 /**
  * Article editor. The body is live (collaborative Yjs); everything else is a
  * form saved by the `saveArticle` action, which also stores a version of the
- * body. "Save draft" and "Publish" differ only in the status they save.
+ * body. A draft has "Save draft" and "Publish"; a published article has
+ * "Save changes" (stays published) and "Unpublish", so saving never takes an
+ * article out of publication by accident. They differ only in the status they save.
  */
 
 import { useEffect, useMemo, useState } from 'react'
@@ -80,6 +82,7 @@ function Editor({ article, articles, initialTags }: { article: ArticleView; arti
   const connections = useConnections(article.id, links, articles)
 
   const dirty = JSON.stringify(form) !== JSON.stringify(saved)
+  const isPublished = article.status === 'published'
   useEffect(() => {
     if (!dirty) return
     const warn = (e: BeforeUnloadEvent) => e.preventDefault()
@@ -113,11 +116,16 @@ function Editor({ article, articles, initialTags }: { article: ArticleView; arti
       return
     }
     setSaved(form)
-    if (nextStatus === 'published') {
-      toast.success(article.status === 'published' ? 'Published changes saved' : 'Article published')
+    const version = res.data.revision.saved ? ` · version ${res.data.revision.number}` : ''
+    if (nextStatus === 'published' && article.status !== 'published') {
+      toast.success('Article published')
       navigate(`/u/${universe.id}/a/${article.id}`)
+    } else if (nextStatus === 'published') {
+      toast.success(`Changes saved${version}`)
+    } else if (article.status === 'published') {
+      toast.success(`Unpublished — now a draft${version}`)
     } else {
-      toast.success(res.data.revision.saved ? `Draft saved · version ${res.data.revision.number}` : 'Draft saved')
+      toast.success(`Draft saved${version}`)
     }
   }
 
@@ -142,10 +150,10 @@ function Editor({ article, articles, initialTags }: { article: ArticleView; arti
             <Eye className="size-4" aria-hidden /> View
           </Link>
           <Button type="button" variant="outline" loading={saving === 'draft'} disabled={saving !== null} onClick={() => void save('draft')}>
-            Save draft
+            {isPublished ? 'Unpublish' : 'Save draft'}
           </Button>
           <Button type="button" loading={saving === 'published'} disabled={saving !== null} onClick={() => void save('published')}>
-            Publish
+            {isPublished ? 'Save changes' : 'Publish'}
           </Button>
         </div>
       </div>

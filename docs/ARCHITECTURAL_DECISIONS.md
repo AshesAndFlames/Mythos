@@ -295,3 +295,20 @@ The user proposed recycling deleted articles' ids for new articles. That would h
 - Role changes, removals and article deletions are not in the feed (not requested).
 - The feed shows the latest 100 entries per universe; there is no paging or pruning yet.
 
+## ADR-022: Cover uploads are checked by the worker (production readiness review)
+**Status:** **Accepted** (2026-11-20)
+
+**Context:** The readiness review (SECURITY_REVIEW.md, S-1) found that the `/api/files/*` proxy forwarded everything to the platform file gateway. Any signed-in user, member of nothing, could list every app-scope file (and so every cover of every private universe), overwrite or delete any cover, and upload files of any type or size up to 1 GiB, filling the app's shared storage. Type and size were checked only in the browser.
+
+**Decision:**
+1. **The worker narrows the gateway** (`src/server/mythos/uploads.ts`, used by `src/server/http-routes.ts`). Reads of one file pass, so covers still render in `<img>`. Listing, deleting, multipart uploads and every other write answer 403.
+2. **Cover keys name their universe:** `covers/<universeId>/<uuid>.<ext>`. An upload is accepted only from an active owner or editor of that universe, into the app scope, at most 5 MB, with PNG, JPEG, WebP or GIF bytes (checked by signature) that match the key's extension, to a key that does not exist yet. The worker rebuilds the form with the checked type.
+3. **Per-user daily cap:** 40 cover uploads per UTC day, counted in `usage` (new kind `upload`) by the system identity.
+4. **Covers cannot cross universes:** `saveArticle` and `updateUniverse` accept `''`, the record's current key, or a key uploaded for the same universe.
+
+**Schema and data:** `usage.kind` gains `upload` (widened, not tightened). `COVER_KEY_PATTERN` accepts both the new form and the old `covers/<uuid>.<ext>`. **Backfill:** none needed. Existing old-form keys stay valid and render, and a record keeps its current key on save. New uploads always use the new form.
+
+**Consequences and limits:**
+- Cover files are still public to anyone holding the URL (app scope), and are not deleted when an article or universe is deleted.
+- Cover uploads by the assistant or other clients must follow the same key rule.
+

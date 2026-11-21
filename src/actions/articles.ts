@@ -1,5 +1,5 @@
 import type { ActionTools } from 'deepspace/worker'
-import { COLLECTIONS } from '../domain/mythos'
+import { COLLECTIONS, coverKeyAllowed } from '../domain/mythos'
 import type { ArticleData, CategoryData } from '../domain/records'
 import { mythosAction, UserError } from '../server/mythos/action'
 import { recordActivity } from '../server/mythos/activity'
@@ -138,6 +138,9 @@ export const saveArticle = mythosAction(
     const universeId = article.data.universeId
     const articleId = article.recordId
 
+    if (!coverKeyAllowed(params.coverImageKey, universeId, article.data.coverImageKey)) {
+      throw new UserError('That cover image belongs to another universe.')
+    }
     if (params.categoryId) {
       const category = await getRecord<CategoryData>(tools, COLLECTIONS.categories, params.categoryId)
       if (!category || category.data.universeId !== universeId) throw new UserError('Category not found')

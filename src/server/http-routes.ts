@@ -30,6 +30,16 @@ import {
 } from 'deepspace/worker'
 import type { ExpoAuthBridgeOptions, JwtVerifierConfig, VerifyResult } from 'deepspace/worker'
 import { integrations } from '../integrations.js'
+import { COVER_MAX_BYTES } from '../domain/mythos.js'
+import { createActionTools } from './action-tools.js'
+import {
+  authorizeCoverUpload,
+  classifyFilesRequest,
+  countCoverUpload,
+  extensionMatches,
+  sniffImage,
+  UploadRefused,
+} from './mythos/uploads.js'
 import type { AppContext, Env } from '../../worker.js'
 
 function jwtConfig(env: Env): JwtVerifierConfig {
@@ -289,14 +299,22 @@ export function registerPlatformProxyRoutes(app: Hono<AppContext>): void {
   // Scoped R2 files → platform-worker. The app has no local R2 binding; the
   // platform bucket scopes keys to the verified app and, by default, user.
   app.all('/api/files/*', async (c) => {
+    const url = new URL(c.req.url)
+    // Mythos only uploads cover images: narrow the gateway to reads of one
+    // file and validated cover uploads (src/server/mythos/uploads.ts).
+    const decision = classifyFilesRequest(c.req.method, url, c.req.header('Content-Length') ?? null)
+    if (decision.kind === 'refuse') return c.json({ error: decision.error }, decision.status)
+
     // A same-origin GET/HEAD with no bearer is identified by the app-origin
     // session cookie, so a private file URL renders in <img>/<audio>/<video>.
-    // The fallback lives here, not in resolveAuth, which also gates writes.
+    // Writes require the bearer token (resolveAuth) alone.
     const auth =
-      (await resolveAuth(c.req.raw, c.env)) ?? (await resolveSessionReadAuth(c.req.raw, c.env))
+      decision.kind === 'upload'
+        ? await resolveAuth(c.req.raw, c.env)
+        : ((await resolveAuth(c.req.raw, c.env)) ?? (await resolveSessionReadAuth(c.req.raw, c.env)))
     const userId = auth?.userId ?? null
+    if (decision.kind === 'upload' && !userId) return c.json({ error: 'Sign in required' }, 401)
 
-    const url = new URL(c.req.url)
     const platformUrl = new URL(c.req.url)
     platformUrl.pathname = url.pathname.replace('/api/files', '/internal/files')
 
@@ -307,12 +325,22 @@ export function registerPlatformProxyRoutes(app: Hono<AppContext>): void {
     reassertAppIdentity(headers, c.env)
     if (userId) headers.set('x-user-id', userId)
 
+    let body: BodyInit | null = c.req.raw.body
+    if (decision.kind === 'upload' && userId) {
+      const checked = await checkCoverUpload(c.req.raw, c.env, userId, decision.key, decision.universeId, headers)
+      if (checked instanceof Response) return checked
+      body = checked
+      // The rebuilt form carries its own boundary and length.
+      headers.delete('content-type')
+      headers.delete('content-length')
+    }
+
     const resp = await platformWorkerFetch(
       c.env,
       new Request(platformUrl.toString(), {
         method: c.req.method,
         headers,
-        body: c.req.raw.body,
+        body,
       }),
     )
 
@@ -367,6 +395,73 @@ export function registerPlatformProxyRoutes(app: Hono<AppContext>): void {
       body: ['GET', 'HEAD'].includes(method) ? undefined : c.req.raw.body,
     })
   })
+}
+
+/**
+ * Validates a cover upload's bytes and the caller's right to upload, and
+ * returns the form to forward (rebuilt around the checked file), or the
+ * refusal to send back.
+ */
+async function checkCoverUpload(
+  req: Request,
+  env: Env,
+  userId: string,
+  key: string,
+  universeId: string,
+  headers: Headers,
+): Promise<FormData | Response> {
+  const refuse = (status: number, error: string) =>
+    new Response(JSON.stringify({ error }), { status, headers: { 'Content-Type': 'application/json' } })
+
+  let form: FormData
+  try {
+    form = await req.formData()
+  } catch {
+    return refuse(400, 'The upload could not be read.')
+  }
+  const file = form.get('file')
+  if (!(file instanceof File)) return refuse(400, 'The upload carried no file.')
+  if (file.size > COVER_MAX_BYTES) return refuse(413, 'Cover images must be 5 MB or smaller.')
+  const mime = sniffImage(new Uint8Array(await file.slice(0, 16).arrayBuffer()))
+  if (!mime || !extensionMatches(key, mime)) return refuse(415, 'Choose a PNG, JPEG, WebP or GIF image.')
+
+  const system = createActionTools(env, env.OWNER_USER_ID, '')
+  const unchecked = (err: unknown) => {
+    if (err instanceof UploadRefused) return refuse(err.status, err.message)
+    console.error(`[files] upload check failed for ${userId}: ${err instanceof Error ? err.message : String(err)}`)
+    return refuse(503, 'The upload could not be checked. Try again shortly.')
+  }
+  try {
+    await authorizeCoverUpload(system, userId, universeId)
+  } catch (err) {
+    return unchecked(err)
+  }
+
+  // Keys are fresh UUIDs: an existing one is a cover already in use.
+  const probeHeaders = new Headers(headers)
+  probeHeaders.delete('content-type')
+  probeHeaders.delete('content-length')
+  const probe = await platformWorkerFetch(env, `/internal/files/apps/${env.DEEPSPACE_APP_ID}/${key}?scope=app`, {
+    method: 'HEAD',
+    headers: probeHeaders,
+  })
+  if (probe.status === 200) return refuse(409, 'That cover image already exists.')
+  if (probe.status !== 404) {
+    console.error(`[files] existence check for ${key} answered ${probe.status}`)
+    return refuse(503, 'The upload could not be checked. Try again shortly.')
+  }
+
+  try {
+    await countCoverUpload(system, userId)
+  } catch (err) {
+    return unchecked(err)
+  }
+
+  const name = form.get('name')
+  const out = new FormData()
+  out.append('file', new File([file], file.name || 'cover', { type: mime }))
+  if (typeof name === 'string') out.append('name', name.slice(0, 200))
+  return out
 }
 
 const matches = (pathname: string, prefixes: readonly string[]): boolean =>

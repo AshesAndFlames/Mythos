@@ -85,7 +85,8 @@ export const LINK_TYPES = [
 export type LinkType = (typeof LINK_TYPES)[number]
 
 export const REFERENCE_SOURCES = ['wikipedia', 'web', 'manual'] as const
-export const USAGE_KINDS = ['ai_text', 'ai_chat', 'image', 'research'] as const
+/** `upload` counts cover-image uploads against a per-user daily cap. */
+export const USAGE_KINDS = ['ai_text', 'ai_chat', 'image', 'research', 'upload'] as const
 export type UsageKind = (typeof USAGE_KINDS)[number]
 
 export const LIMITS = {
@@ -140,8 +141,28 @@ export const COLLECTIONS = {
  * server (Zod) and again before rendering, so a stored value can never turn
  * into an arbitrary URL.
  */
-export const COVER_KEY_PATTERN = /^covers\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpe?g|webp|gif)$/
+export const COVER_KEY_PATTERN =
+  /^covers\/(?:([A-Za-z0-9_-]{1,100})\/)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpe?g|webp|gif)$/
+
+/**
+ * The universe a cover key was uploaded for: new keys are
+ * `covers/<universeId>/<uuid>.<ext>`. Keys from before that rule
+ * (`covers/<uuid>.<ext>`) name none and return null, as does any invalid key.
+ */
+export function coverKeyUniverse(key: string): string | null {
+  return COVER_KEY_PATTERN.exec(key)?.[1] ?? null
+}
+
+/**
+ * Whether a cover key may be saved on a record of `universeId`: '' (no
+ * cover), the value the record already holds, or a key uploaded for that
+ * universe. Stops a cover from one universe being attached in another.
+ */
+export function coverKeyAllowed(key: string, universeId: string, current: string): boolean {
+  return key === '' || key === current || coverKeyUniverse(key) === universeId
+}
 export const COVER_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const
+export type CoverMime = (typeof COVER_MIME_TYPES)[number]
 export const COVER_MAX_BYTES = 5 * 1024 * 1024
 
 /**

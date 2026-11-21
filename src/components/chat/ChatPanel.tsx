@@ -307,6 +307,7 @@ export function ChatPanel({
               onKeyDown={handleKeyDown}
               disabled={disabled}
               placeholder={disabled ? 'Creating chat…' : 'Message the assistant…'}
+              aria-label="Message the assistant"
               className="block w-full resize-none bg-transparent px-4 pt-3 pb-12 leading-[1.5] text-foreground placeholder:text-muted-foreground/60 outline-none disabled:cursor-not-allowed"
             />
 

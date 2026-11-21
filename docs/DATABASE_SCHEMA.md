@@ -75,7 +75,7 @@ Keep `BASE_USERS_SCHEMA` / `USERS_COLUMNS` unchanged, with `member: { read: 'own
 | `tagline` | T plain | | ≤ 200 |
 | `description` | T plain | | ≤ 5,000 |
 | `artStyle` | T plain | | ≤ 300; image prompt suffix |
-| `coverImageKey` | T plain | | `''` or `covers/<uuid>.<ext>` in the app file store (ADR-019) |
+| `coverImageKey` | T plain | | `''` or `covers/<universeId>/<uuid>.<ext>` in the app file store; keys saved before ADR-022 are `covers/<uuid>.<ext>` and stay valid (ADR-019, ADR-022) |
 | `visibility` | T select `private` | default `private` | Only `private` today (ADR-017) |
 | `ownerId` | T plain | Imm | Creator |
 | `editorIds` | T json | | Server-maintained: owner + editors |
@@ -139,7 +139,7 @@ Removal **deletes** the row (rather than setting `removed`). Re-inviting then wo
 | `infobox` | T json | | `Array<{ key: string; value: string }>`, ≤ 30 entries. Written only by `setArticleInfobox` |
 | `categoryId` | T plain | | '' or a category in the same universe. Written only by `setArticleCategory` / `saveArticle` |
 | `status` | T select `draft,published` | Req, default `draft` | Within-universe label. Written only by actions (`saveArticle`), so publishing is always recorded (ADR-021) |
-| `coverImageKey` | T plain | | `''` or `covers/<uuid>.<ext>`. Written only by `saveArticle` (ADR-019) |
+| `coverImageKey` | T plain | | `''` or `covers/<universeId>/<uuid>.<ext>` (older keys `covers/<uuid>.<ext>` stay valid). Written only by `saveArticle`, which refuses a key uploaded for another universe (ADR-019, ADR-022) |
 | `editorIds` | T json | | Server-maintained |
 | `ownerId` | T plain | Imm | = universe owner |
 | `authorId` | T plain | Imm | The editor who created it (display) |
@@ -247,7 +247,7 @@ Relationship types and inverse labels (the inverse is computed in the UI from on
 |---|---|---|
 | `userId` | T | Req, Imm |
 | `day` | T (YYYY-MM-DD, UTC) | Req, Imm |
-| `kind` | T select `ai_text,ai_chat,image,research` | Req, Imm |
+| `kind` | T select `ai_text,ai_chat,image,research,upload` | Req, Imm. `upload` (ADR-022) counts cover uploads against a per-user daily cap |
 | `count` | N | Req |
 
 - `uniqueOn: ['userId','day','kind']`.

@@ -1,5 +1,5 @@
 import type { ActionTools } from 'deepspace/worker'
-import { COLLECTIONS, LIMITS } from '../domain/mythos'
+import { COLLECTIONS, coverKeyAllowed, LIMITS } from '../domain/mythos'
 import type { ArticleData, TeamMemberData, UniverseData } from '../domain/records'
 import { mythosAction, UserError } from '../server/mythos/action'
 import { requireRole } from '../server/mythos/membership'
@@ -73,6 +73,12 @@ export const updateUniverse = mythosAction(
   async ({ userId, params, tools, system }) => {
     const { universe } = await requireRole(tools, userId, params.universeId, 'owner')
     const { universeId, ...changes } = params
+    if (
+      changes.coverImageKey !== undefined &&
+      !coverKeyAllowed(changes.coverImageKey, universeId, universe.data.coverImageKey)
+    ) {
+      throw new UserError('That cover image belongs to another universe.')
+    }
     const patch: Partial<UniverseData> = { ...changes }
 
     if (changes.name !== undefined && changes.name !== universe.data.name) {

@@ -1,6 +1,7 @@
 /**
  * Picks and uploads a cover image to the app file store under a key Mythos
- * chooses (`covers/<uuid>.<ext>`), then reports the key. Saving the key on a
+ * chooses (`covers/<universeId>/<uuid>.<ext>`), then reports the key. The
+ * worker accepts it only from an owner or editor of that universe. Saving the key on a
  * universe or article is a server action, which validates it again.
  */
 
@@ -9,6 +10,7 @@ import { ImagePlus, Trash2 } from 'lucide-react'
 import { useR2Files } from 'deepspace'
 import { COVER_KEY_PATTERN, COVER_MAX_BYTES, COVER_MIME_TYPES } from '@/domain/mythos'
 import { Button } from '@/components/ui'
+import { useUniverseContext } from '@/features/universes/context'
 import { CoverImage } from './CoverImage'
 
 const EXT: Record<(typeof COVER_MIME_TYPES)[number], string> = {
@@ -25,10 +27,11 @@ function isCoverMime(type: string): type is (typeof COVER_MIME_TYPES)[number] {
 /** Validates a file and uploads it. Resolves to the new key, or throws a user-facing Error. */
 export function useCoverUpload() {
   const { upload } = useR2Files({ scope: 'app' })
+  const { universe } = useUniverseContext()
   return async (file: File): Promise<string> => {
     if (!isCoverMime(file.type)) throw new Error('Choose a PNG, JPEG, WebP or GIF image.')
     if (file.size > COVER_MAX_BYTES) throw new Error('Cover images must be 5 MB or smaller.')
-    const key = `covers/${crypto.randomUUID()}.${EXT[file.type]}`
+    const key = `covers/${universe.id}/${crypto.randomUUID()}.${EXT[file.type]}`
     const res = await upload(file, file.name, { key })
     if (!res.success) throw new Error(res.error ?? 'The image could not be uploaded.')
     if (!COVER_KEY_PATTERN.test(key)) throw new Error('The image could not be uploaded.')
