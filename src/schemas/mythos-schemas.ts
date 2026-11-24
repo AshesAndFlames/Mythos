@@ -34,6 +34,7 @@ import {
   COLLECTIONS,
   LIMITS,
   LINK_TYPES,
+  MEDIA_KINDS,
   MEMBER_STATUSES,
   REFERENCE_SOURCES,
   UNIVERSE_ROLES,
@@ -306,6 +307,59 @@ export const activitySchema: CollectionSchema = {
   permissions: UNIVERSE_OWNED,
 }
 
+/**
+ * A universe's maps and images (ADR-025). Members read; uploads go through
+ * the checked file proxy and rows through `addMedia` and friends.
+ */
+export const mediaSchema: CollectionSchema = {
+  name: COLLECTIONS.media,
+  columns: [
+    idColumn('universeId'),
+    text('key', 200, { required: true, immutable: true }),
+    text('title', LIMITS.mediaTitle, { required: true }),
+    text('caption', LIMITS.mediaCaption, { default: '' }),
+    select('kind', MEDIA_KINDS, { required: true }),
+    idColumn('uploadedBy'),
+  ],
+  teamField: 'universeId',
+  uniqueOn: ['key'],
+  permissions: UNIVERSE_OWNED,
+}
+
+/** Gallery items shown on an article. Written only by `setArticleMedia`. */
+export const articleMediaSchema: CollectionSchema = {
+  name: COLLECTIONS.articleMedia,
+  columns: [
+    idColumn('universeId'),
+    idColumn('articleId'),
+    idColumn('mediaId'),
+    { name: 'sortOrder', storage: 'number', interpretation: 'plain', default: 0 },
+  ],
+  teamField: 'universeId',
+  uniqueOn: ['articleId', 'mediaId'],
+  permissions: UNIVERSE_OWNED,
+}
+
+/**
+ * Per-account preferences. A user reads only their own row; every write
+ * goes through `setAccountSettings`, which validates it.
+ */
+export const accountSettingsSchema: CollectionSchema = {
+  name: COLLECTIONS.accountSettings,
+  columns: [
+    idColumn('userId'),
+    { name: 'assistantEnabled', storage: 'number', interpretation: { kind: 'boolean' }, default: true },
+  ],
+  ownerField: 'userId',
+  uniqueOn: ['userId'],
+  permissions: {
+    '*': NONE,
+    viewer: NONE,
+    member: { read: 'own', create: false, update: false, delete: false },
+    admin: ADMIN_ALL,
+  },
+}
+
 export const mythosSchemas: CollectionSchema[] = [
   universesSchema,
   teamMembersSchema,
@@ -319,4 +373,7 @@ export const mythosSchemas: CollectionSchema[] = [
   usageSchema,
   invitationsSchema,
   activitySchema,
+  mediaSchema,
+  articleMediaSchema,
+  accountSettingsSchema,
 ]

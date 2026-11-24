@@ -13,6 +13,8 @@ import {
   ASSIGNABLE_ROLES,
   LIMITS,
   LINK_TYPES,
+  MEDIA_KEY_PATTERN,
+  MEDIA_KINDS,
   UNIVERSE_VISIBILITIES,
 } from '../../domain/mythos'
 import { richTextDocSchema } from './richtext'
@@ -222,3 +224,37 @@ export const publicArticleSchema = z.object({
   universeId: recordIdSchema,
   articleId: recordIdSchema,
 })
+
+// ── Maps and images (ADR-025) ─────────────────────────────────────────────
+
+const mediaKeySchema = z.string().regex(MEDIA_KEY_PATTERN, 'Invalid image key')
+
+export const addMediaSchema = z.object({
+  universeId: recordIdSchema,
+  key: mediaKeySchema,
+  title: requiredText(LIMITS.mediaTitle, 'Title'),
+  caption: trimmed(LIMITS.mediaCaption, 'Caption').optional().default(''),
+  kind: z.enum(MEDIA_KINDS),
+})
+
+export const updateMediaSchema = z
+  .object({
+    mediaId: recordIdSchema,
+    title: requiredText(LIMITS.mediaTitle, 'Title').optional(),
+    caption: trimmed(LIMITS.mediaCaption, 'Caption').optional(),
+    kind: z.enum(MEDIA_KINDS).optional(),
+  })
+  .refine((v) => v.title !== undefined || v.caption !== undefined || v.kind !== undefined, 'Nothing to update')
+
+export const mediaIdSchema = z.object({ mediaId: recordIdSchema })
+
+/** The article's gallery images, in display order (replaces the current set). */
+export const setArticleMediaSchema = z.object({
+  articleId: recordIdSchema,
+  mediaIds: z
+    .array(recordIdSchema)
+    .max(LIMITS.mediaPerArticle, `At most ${LIMITS.mediaPerArticle} images per article`)
+    .refine((ids) => new Set(ids).size === ids.length, 'An image can be shown only once per article'),
+})
+
+export const accountSettingsSchema = z.object({ assistantEnabled: z.boolean() })

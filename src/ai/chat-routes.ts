@@ -36,6 +36,8 @@ import {
 import type { AgentToolAccessResult, AgentToolRouteOptions, ChatTurn } from 'deepspace/worker'
 import { schemas } from '../schemas.js'
 import { buildSystemPrompt } from './tools.js'
+import { createActionTools } from '../server/action-tools.js'
+import { assistantEnabled } from '../server/mythos/account.js'
 // Type-only — TypeScript strips these at runtime, so no circular import
 // with worker.ts (which imports `registerAiChatRoutes` from this file).
 import type { Env, AppContext } from '../../worker.js'
@@ -150,6 +152,20 @@ export function registerAiChatRoutes(
     const authHeader = c.req.header('Authorization') ?? ''
     const jwt = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
     if (!jwt) return c.json({ error: 'Unauthorized' }, 401)
+
+    // The account setting is enforced here, not only by hiding the panel (ADR-026).
+    try {
+      const system = createActionTools(c.env, c.env.OWNER_USER_ID, '')
+      if (!(await assistantEnabled(system, auth.userId))) {
+        return c.json(
+          { error: 'The AI assistant is turned off for your account. Turn it on in Settings.', code: 'assistant_disabled' },
+          403,
+        )
+      }
+    } catch (err) {
+      console.error(`[ai/chat] reading account settings for ${auth.userId} failed: ${err instanceof Error ? err.message : String(err)}`)
+      return c.json({ error: 'Temporarily unavailable' }, 503)
+    }
 
     const { chatId, userMessageId, content, modelId } = await c.req.json<{
       chatId?: string

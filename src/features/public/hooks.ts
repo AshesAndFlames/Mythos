@@ -5,7 +5,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { UniverseRole, UniverseVisibility } from '@/domain/mythos'
+import type { MediaKind, UniverseRole, UniverseVisibility } from '@/domain/mythos'
 import type { PublicArticleSummary, PublicCategory, PublicConnection, PublicUniverseSummary } from '@/domain/public'
 import type { RichTextNode } from '@/domain/records'
 import { callAction } from '@/lib/actions'
@@ -78,6 +78,8 @@ export interface PublicArticleData {
     updatedAt: string
     content: RichTextNode | null
   }
+  /** Images attached to the article, in order (ADR-025). */
+  media: Array<{ id: string; key: string; title: string; caption: string; kind: MediaKind }>
   connections: PublicConnection[]
   related: PublicArticleSummary[]
 }

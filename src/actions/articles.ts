@@ -199,8 +199,8 @@ export const setArticleInfobox = mythosAction(
 )
 
 /**
- * Deletes an article with its links (both directions), references, tags and
- * revisions. Its collaborative body is erased and verified empty first
+ * Deletes an article with its links (both directions), references, tags,
+ * revisions and gallery attachments (the gallery items themselves stay). Its collaborative body is erased and verified empty first
  * (src/server/mythos/scrub.ts); if erasing fails, nothing is deleted.
  */
 export const deleteArticle = mythosAction(
@@ -217,6 +217,7 @@ export const deleteArticle = mythosAction(
     await drain(system, COLLECTIONS.articleLinks, { universeId, toArticleId: articleId })
     await drain(system, COLLECTIONS.articleReferences, { universeId, articleId })
     await drain(system, COLLECTIONS.articleTags, { universeId, articleId })
+    await drain(system, COLLECTIONS.articleMedia, { universeId, articleId })
     await drain(system, COLLECTIONS.articleRevisions, { universeId, articleId })
     await mustSucceed(system.remove(COLLECTIONS.articles, articleId), 'Deleting the article')
     return { articleId }

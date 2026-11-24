@@ -87,7 +87,7 @@ export type LinkType = (typeof LINK_TYPES)[number]
 
 export const REFERENCE_SOURCES = ['wikipedia', 'web', 'manual'] as const
 /** `upload` counts cover-image uploads against a per-user daily cap. */
-export const USAGE_KINDS = ['ai_text', 'ai_chat', 'image', 'research', 'upload', 'invite_email'] as const
+export const USAGE_KINDS = ['ai_text', 'ai_chat', 'image', 'research', 'upload', 'invite_email', 'media_upload'] as const
 export type UsageKind = (typeof USAGE_KINDS)[number]
 
 export const LIMITS = {
@@ -109,6 +109,12 @@ export const LIMITS = {
   email: 320,
   /** Pending invitations one universe may hold at once. */
   pendingInvitations: 50,
+  mediaTitle: 120,
+  mediaCaption: 1000,
+  /** Maps and images one universe may hold. */
+  mediaPerUniverse: 300,
+  /** Gallery images one article may show. */
+  mediaPerArticle: 12,
   /** Universes one user may own. */
   universesPerOwner: 25,
   /** Oldest revisions beyond this are pruned when a new one is saved. */
@@ -134,6 +140,9 @@ export const COLLECTIONS = {
   usage: 'usage',
   invitations: 'invitations',
   activity: 'activity',
+  media: 'media',
+  articleMedia: 'article_media',
+  accountSettings: 'account_settings',
 } as const
 
 /**
@@ -173,6 +182,33 @@ export const COVER_MAX_BYTES = 5 * 1024 * 1024
  */
 export function coverUrl(key: string | null | undefined, appId: string): string | null {
   if (!key || !COVER_KEY_PATTERN.test(key) || !/^[A-Za-z0-9_-]+$/.test(appId)) return null
+  const full = `apps/${appId}/${key}`
+  return `/api/files/${full.split('/').map(encodeURIComponent).join('/')}?scope=app`
+}
+
+// ── Maps and images (ADR-025) ─────────────────────────────────────────────
+
+export const MEDIA_KINDS = ['map', 'image'] as const
+export type MediaKind = (typeof MEDIA_KINDS)[number]
+export const MEDIA_KIND_LABELS: Record<MediaKind, string> = { map: 'Map', image: 'Image' }
+
+/**
+ * Gallery files live in the app-scope file store at
+ * `media/<universeId>/<uuid>.<ext>`, a key Mythos chooses. Validated on the
+ * server (upload proxy and actions) and again before rendering.
+ */
+export const MEDIA_KEY_PATTERN =
+  /^media\/([A-Za-z0-9_-]{1,100})\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpe?g|webp|gif)$/
+export const MEDIA_MAX_BYTES = 15 * 1024 * 1024
+
+/** The universe a gallery key was uploaded for, or null for an invalid key. */
+export function mediaKeyUniverse(key: string): string | null {
+  return MEDIA_KEY_PATTERN.exec(key)?.[1] ?? null
+}
+
+/** Same-origin URL for a validated gallery key, or null. */
+export function mediaUrl(key: string | null | undefined, appId: string): string | null {
+  if (!key || !MEDIA_KEY_PATTERN.test(key) || !/^[A-Za-z0-9_-]+$/.test(appId)) return null
   const full = `apps/${appId}/${key}`
   return `/api/files/${full.split('/').map(encodeURIComponent).join('/')}?scope=app`
 }

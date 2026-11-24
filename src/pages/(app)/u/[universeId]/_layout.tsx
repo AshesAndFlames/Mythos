@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Navigate, NavLink, Outlet, useLocation, useParams } from 'react-router-dom'
-import { BookOpenText, Feather, History, LayoutDashboard, Settings2, Users } from 'lucide-react'
+import { BookOpenText, Feather, History, Images, LayoutDashboard, Settings2, Users } from 'lucide-react'
 import { CoverImage } from '@/components/mythos/CoverImage'
 import { NewArticleDialog } from '@/components/mythos/Dialogs'
 import { PageSkeleton } from '@/components/mythos/Skeleton'
@@ -112,6 +112,10 @@ function UniverseRail({ context, canEdit }: { context: UniverseContext; canEdit:
         <NavLink to={`${base}/articles`} className={linkClass}>
           <BookOpenText className="size-4" aria-hidden />
           Library
+        </NavLink>
+        <NavLink to={`${base}/media`} className={linkClass}>
+          <Images className="size-4" aria-hidden />
+          Maps & Images
         </NavLink>
         <NavLink to={`${base}/activity`} className={linkClass}>
           <History className="size-4" aria-hidden />

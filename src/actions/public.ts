@@ -24,10 +24,12 @@ import {
 import type {
   ArticleData,
   ArticleLinkData,
+  ArticleMediaData,
   ArticleRevisionData,
   ArticleTagData,
   CategoryData,
   InvitationData,
+  MediaData,
   RichTextNode,
   TagData,
   UniverseData,
@@ -186,7 +188,7 @@ export const getPublicArticle = mythosAction(
       throw new AccessDenied('Article not found')
     }
 
-    const [published, links, latest, categories] = await Promise.all([
+    const [published, links, latest, categories, attached, gallery] = await Promise.all([
       publishedIn(tools, params.universeId),
       queryAll<ArticleLinkData>(tools, COLLECTIONS.articleLinks, { where: { universeId: params.universeId } }),
       tools.query<Pick<ArticleRevisionData, 'content'> & Record<string, unknown>>(COLLECTIONS.articleRevisions, {
@@ -196,6 +198,10 @@ export const getPublicArticle = mythosAction(
         limit: 1,
       }),
       queryAll<CategoryData>(tools, COLLECTIONS.categories, { where: { universeId: params.universeId } }),
+      queryAll<ArticleMediaData>(tools, COLLECTIONS.articleMedia, {
+        where: { universeId: params.universeId, articleId: params.articleId },
+      }),
+      queryAll<MediaData>(tools, COLLECTIONS.media, { where: { universeId: params.universeId } }),
     ])
     if (!latest.success) throw new Error(`Reading the article's versions failed: ${latest.error}`)
 
@@ -209,6 +215,14 @@ export const getPublicArticle = mythosAction(
     const summary = published.find((a) => a.id === params.articleId)
     const content: RichTextNode | null = latest.data.records[0]?.data.content ?? null
     const category = categories.find((c) => c.recordId === article.data.categoryId)
+    // Only the images attached to this published article; the rest of the gallery stays members-only.
+    const galleryById = new Map(gallery.map((m) => [m.recordId, m]))
+    const media = attached
+      .sort((a, b) => a.data.sortOrder - b.data.sortOrder)
+      .flatMap((a) => {
+        const m = galleryById.get(a.data.mediaId)
+        return m ? [{ id: m.recordId, key: m.data.key, title: m.data.title, caption: m.data.caption, kind: m.data.kind }] : []
+      })
 
     return {
       universe: { id: universe.recordId, name: universe.data.name },
@@ -226,6 +240,7 @@ export const getPublicArticle = mythosAction(
         updatedAt: article.updatedAt ?? '',
         content,
       },
+      media,
       connections,
       /** Published articles at the other end of a connection, by id. */
       related: published.filter(

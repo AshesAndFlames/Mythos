@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { coverKeyAllowed, coverKeyUniverse, coverUrl, COVER_MAX_BYTES } from '../../domain/mythos'
+import { coverKeyAllowed, coverKeyUniverse, coverUrl, COVER_MAX_BYTES, MEDIA_MAX_BYTES, mediaKeyUniverse, mediaUrl } from '../../domain/mythos'
 import { coverKeySchema } from './validation'
-import { classifyFilesRequest, extensionMatches, sniffImage, UPLOAD_ENVELOPE_BYTES, utcDay } from './uploads'
+import { classifyFilesRequest, extensionMatches, sniffImage, tooLargeMessage, UPLOAD_ENVELOPE_BYTES, uploadTarget, utcDay } from './uploads'
 
 const UUID = '0b6c1f9e-3a2d-4c5b-9e8f-7a6b5c4d3e2f'
 const U = 'uni_A-1'
@@ -50,7 +50,7 @@ describe('classifyFilesRequest', () => {
     }
   })
   it('accepts a sized cover upload into the app scope under a universe key', () => {
-    expect(classifyFilesRequest('POST', upload(key()), '1000')).toEqual({ kind: 'upload', key: key(), universeId: U })
+    expect(classifyFilesRequest('POST', upload(key()), '1000')).toEqual({ kind: 'upload', key: key(), universeId: U, purpose: 'cover' })
     expect(classifyFilesRequest('POST', upload(key(), 'self'), '1000')).toMatchObject({ status: 403 })
     expect(classifyFilesRequest('POST', upload(key('png', null)), '1000')).toMatchObject({ status: 400 })
     expect(classifyFilesRequest('POST', upload('junk/a.txt'), '1000')).toMatchObject({ status: 400 })
@@ -59,6 +59,42 @@ describe('classifyFilesRequest', () => {
     const limit = COVER_MAX_BYTES + UPLOAD_ENVELOPE_BYTES
     expect(classifyFilesRequest('POST', upload(key()), String(limit))).toMatchObject({ kind: 'upload' })
     expect(classifyFilesRequest('POST', upload(key()), String(limit + 1))).toMatchObject({ status: 413 })
+  })
+})
+
+describe('gallery uploads (ADR-025)', () => {
+  const media = (ext = 'png', universe = U) => `media/${universe}/${UUID}.${ext}`
+
+  it('gallery keys name their universe and nothing else passes', () => {
+    expect(mediaKeyUniverse(media())).toBe(U)
+    expect(mediaKeyUniverse(`media/${UUID}.png`)).toBeNull()
+    expect(mediaKeyUniverse(`media/${U}/${UUID}.svg`)).toBeNull()
+    expect(mediaKeyUniverse(`media/../${UUID}.png`)).toBeNull()
+    expect(mediaUrl(media(), 'app_1')).toBe(`/api/files/apps/app_1/media/${U}/${UUID}.png?scope=app`)
+    expect(mediaUrl('https://evil.example/x.png', 'app_1')).toBeNull()
+  })
+
+  it('uploadTarget tells covers and gallery files apart', () => {
+    expect(uploadTarget(media('webp'))).toEqual({ purpose: 'media', universeId: U })
+    expect(uploadTarget(key())).toEqual({ purpose: 'cover', universeId: U })
+    expect(uploadTarget(key('png', null))).toBeNull()
+  })
+
+  it('accepts gallery files up to 15 MB, while covers stay at 5 MB', () => {
+    expect(classifyFilesRequest('POST', upload(media()), '1000')).toEqual({ kind: 'upload', key: media(), universeId: U, purpose: 'media' })
+    const limit = MEDIA_MAX_BYTES + UPLOAD_ENVELOPE_BYTES
+    expect(classifyFilesRequest('POST', upload(media()), String(limit))).toMatchObject({ kind: 'upload' })
+    expect(classifyFilesRequest('POST', upload(media()), String(limit + 1))).toMatchObject({ status: 413, error: tooLargeMessage('media') })
+    expect(classifyFilesRequest('POST', upload(key()), String(COVER_MAX_BYTES + UPLOAD_ENVELOPE_BYTES + 1))).toMatchObject({ status: 413 })
+    expect(tooLargeMessage('media')).toBe('Maps and images must be 15 MB or smaller.')
+    expect(tooLargeMessage('cover')).toBe('Cover images must be 5 MB or smaller.')
+  })
+
+  it('still refuses deleting or overwriting gallery files from a client', () => {
+    const target = url(`/api/files/apps/x/${media()}`, '?scope=app')
+    for (const method of ['DELETE', 'PUT', 'PATCH']) {
+      expect(classifyFilesRequest(method, target, '10')).toMatchObject({ kind: 'refuse', status: 403 })
+    }
   })
 })
 

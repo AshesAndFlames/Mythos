@@ -9,7 +9,9 @@ import {
   setArticleInfobox,
 } from './articles'
 import { createCategory, deleteCategory, updateCategory } from './categories'
+import { setAccountSettings } from './account'
 import { createLink, deleteLink } from './links'
+import { addMedia, deleteMedia, setArticleMedia, updateMedia } from './media'
 import {
   inviteMember,
   listInvitations,
@@ -64,6 +66,13 @@ export const actions: Record<string, ActionHandler<Env>> = {
   // Relationships (editor)
   createLink,
   deleteLink,
+  // Maps and images (editor; ADR-025)
+  addMedia,
+  updateMedia,
+  deleteMedia,
+  setArticleMedia,
+  // Account settings (the caller's own; ADR-026)
+  setAccountSettings,
   // Revisions (editor)
   saveRevision,
   restoreRevision,

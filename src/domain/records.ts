@@ -10,6 +10,7 @@ import type {
   AssignableRole,
   InvitationStatus,
   LinkType,
+  MediaKind,
   UniverseRole,
   UniverseVisibility,
 } from './mythos'
@@ -170,3 +171,28 @@ export interface ActivityData {
   at: string
 }
 
+/** A map or image in a universe's gallery (ADR-025). The file is at `key`. */
+export interface MediaData {
+  universeId: string
+  /** `media/<universeId>/<uuid>.<ext>`; unique. */
+  key: string
+  title: string
+  caption: string
+  kind: MediaKind
+  uploadedBy: string
+}
+
+/** A gallery item shown on an article, in `sortOrder`. */
+export interface ArticleMediaData {
+  universeId: string
+  articleId: string
+  mediaId: string
+  sortOrder: number
+}
+
+/** Per-account preferences, one row per user. Written only by `setAccountSettings`. */
+export interface AccountSettingsData {
+  userId: string
+  /** The AI assistant panel and chat endpoint. Absent row = enabled. */
+  assistantEnabled: boolean
+}

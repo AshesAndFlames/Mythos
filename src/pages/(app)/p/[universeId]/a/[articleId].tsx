@@ -8,6 +8,7 @@ import { useMemo } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { CategoryBadge, TagChip, TypeBadge } from '@/components/mythos/Badges'
 import { CoverImage } from '@/components/mythos/CoverImage'
+import { ArticleMediaStrip } from '@/components/mythos/Media'
 import { PublicMembershipBar } from '@/components/mythos/PublicUniverse'
 import { ConnectionsSection } from '@/components/mythos/Relationships'
 import { RichTextSnapshotView } from '@/components/mythos/RichTextEditor'
@@ -79,6 +80,11 @@ export default function PublicArticlePage() {
             ✦
           </div>
           <RichTextSnapshotView content={article.content} />
+          {data.media.length > 0 && (
+            <div className="mt-10">
+              <ArticleMediaStrip items={data.media} />
+            </div>
+          )}
           <div className="mt-12">
             <ConnectionsSection
               groups={groups}

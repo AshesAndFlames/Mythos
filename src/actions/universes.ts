@@ -1,7 +1,8 @@
 import type { ActionTools } from 'deepspace/worker'
 import { COLLECTIONS, coverKeyAllowed, LIMITS } from '../domain/mythos'
-import type { ArticleData, TeamMemberData, UniverseData } from '../domain/records'
+import type { ArticleData, MediaData, TeamMemberData, UniverseData } from '../domain/records'
 import { mythosAction, UserError } from '../server/mythos/action'
+import { deleteMediaFile } from '../server/mythos/files'
 import { requireRole } from '../server/mythos/membership'
 import { lockAndEraseArticles } from '../server/mythos/scrub'
 import { drain, mustSucceed, queryAll } from '../server/mythos/store'
@@ -102,7 +103,7 @@ export const updateUniverse = mythosAction(
 export const deleteUniverse = mythosAction(
   'deleteUniverse',
   deleteUniverseSchema,
-  async ({ userId, params, tools, system, systemYjs }) => {
+  async ({ userId, params, tools, system, systemYjs, env }) => {
     const { universe } = await requireRole(tools, userId, params.universeId, 'owner')
     if (params.confirmName.trim() !== universe.data.name) {
       throw new UserError('Type the universe name exactly to confirm deletion.')
@@ -119,7 +120,14 @@ export const deleteUniverse = mythosAction(
       universeId,
       articles.map((a) => a.recordId),
     )
+    // Gallery files go with the universe (ADR-025). A file that cannot be
+    // deleted is logged by deleteMediaFile; its row is removed regardless.
+    const media = await queryAll<Pick<MediaData, 'key'>>(tools, COLLECTIONS.media, { where: { universeId } })
+    for (const m of media) await deleteMediaFile(env, m.data.key)
+
     for (const collection of [
+      COLLECTIONS.articleMedia,
+      COLLECTIONS.media,
       COLLECTIONS.articleTags,
       COLLECTIONS.tags,
       COLLECTIONS.articleRevisions,

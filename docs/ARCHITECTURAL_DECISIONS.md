@@ -356,3 +356,35 @@ The user proposed recycling deleted articles' ids for new articles. That would h
 - Cover images were already public by URL (K-2).
 - Explore and the public pages load once (not live) and count articles per listed universe with one query each, which is fine at the 48-universe page size but would need a stored count at larger scale.
 - Signed-out visitors still cannot read anything (ADR-010 unchanged). Search engines see nothing.
+
+## ADR-025: Maps and images gallery
+**Status:** **Accepted** (2026-11-23)
+
+**Context:** The user asked for a section for map and image uploads. Choices made: a per-universe **Maps & Images** gallery whose items editors can also **attach to articles**, with a **15 MB** limit per file.
+
+**Decision:**
+1. **Two collections, both universe-owned (`read: 'team'`, writes through actions only):** `media` (key, title, caption, kind `map|image`, uploader; `uniqueOn: key`) and `article_media` (article ↔ media with `sortOrder`; `uniqueOn: articleId, mediaId`).
+2. **Files reuse the checked upload proxy (ADR-022).** Keys are `media/<universeId>/<uuid>.<ext>`. The worker accepts them from active owners and editors of that universe, PNG/JPEG/WebP/GIF only (checked by signature against the extension), fresh keys only, at most 15 MB, and within a separate daily cap of 30 per user (`usage.kind = media_upload`). Covers keep their 5 MB limit and 40-a-day cap. 15 MB stays under the SDK's 20 MB single-request part size, so no multipart path is opened.
+3. **Actions:** `addMedia` (editor; the key must name the universe and the file must exist in the store; at most 300 items per universe), `updateMedia` (editor), `deleteMedia` (editor; removes it from every article, deletes the row, then deletes the file server-side), `setArticleMedia` (editor; replaces an article's images in order, at most 12, all from the article's own universe).
+4. **Files are deleted.** `deleteMedia` and `deleteUniverse` delete gallery files through the platform file gateway from the server (clients still cannot delete). A failed file delete is logged and does not undo the row removal. `deleteArticle` removes the article's attachments but keeps the gallery items.
+5. **Public universes (ADR-024):** `getPublicArticle` returns the images attached to that published article. The rest of the gallery is members-only.
+6. **UI:** a Maps & Images tab per universe (filter by kind, full-size viewer, editors upload/edit/delete), a "Maps & images" strip on the article page and the public article page, and a picker in the editor (add from gallery, reorder, remove; each change saves at once).
+
+**Schema and data:** two new collections; `usage.kind` gains `media_upload` (widened). **Backfill:** none.
+
+**Consequences and limits:**
+- Like covers, gallery files are public to anyone holding the exact URL (K-2); keys are random UUIDs and cannot be listed.
+- If `addMedia` fails after an upload succeeded (for example the universe is full), the uploaded file is left unreferenced in the store.
+- Images are shown as uploaded: no thumbnails or resizing, so a 15 MB map is downloaded in full in the grid.
+
+## ADR-026: Account setting to turn off the AI assistant
+**Status:** **Accepted** (2026-11-23)
+
+**Context:** The user asked for a setting, saved to the account, that enables or disables the AI assistant ("ChatGPT"). The in-app assistant offers both GPT and Claude models; the user chose a single switch for the **whole assistant**.
+
+**Decision:**
+1. **`account_settings` collection**, one row per user (`uniqueOn: userId`, `ownerField: userId`): a user reads only their own row; no client may create, update or delete (written only by `setAccountSettings`, Zod-validated, always the caller's own row). No row means the defaults (assistant on).
+2. **Enforced on the server:** `POST /api/ai/chat` refuses with 403 `assistant_disabled` when the caller's setting is off, before any model call. The chat panel (ChatDock) is hidden for those accounts; that is UX only.
+3. **UI:** Settings → AI assistant switch. It is saved to the account, so it applies on every device and updates live.
+
+**Consequences and limits:** Turning it off does not delete past chats; they reappear when it is turned back on. The local agent tools (`registerAgent` for the user's own Codex/Claude client) are not affected by this setting.

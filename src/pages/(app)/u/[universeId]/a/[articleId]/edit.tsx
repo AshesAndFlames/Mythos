@@ -12,6 +12,7 @@ import { ArrowLeft, Eye, Trash2 } from 'lucide-react'
 import { Button, Input, Label, Textarea, useToast } from '@/components/ui'
 import { StatusBadge } from '@/components/mythos/Badges'
 import { CoverPicker } from '@/components/mythos/CoverUpload'
+import { ArticleMediaPicker } from '@/components/mythos/Media'
 import { ConfirmDialog } from '@/components/mythos/Dialogs'
 import { ConnectionsSection, RelationshipPicker, useConnections } from '@/components/mythos/Relationships'
 import { RichTextEditor, useArticleBody } from '@/components/mythos/RichTextEditor'
@@ -21,7 +22,7 @@ import { TagInput } from '@/components/mythos/TagInput'
 import { ARTICLE_TYPE_LABELS, ARTICLE_TYPES, LIMITS, type ArticleStatus, type ArticleType } from '@/domain/mythos'
 import { categoryOptions } from '@/features/universes/categories'
 import { useUniverseContext } from '@/features/universes/context'
-import { combine, useArticle, useCategories, useLinks, useTags, type ArticleView } from '@/features/universes/hooks'
+import { combine, useArticle, useArticleMedia, useCategories, useLinks, useTags, type ArticleView } from '@/features/universes/hooks'
 import { callAction } from '@/lib/actions'
 import { relativeTime } from '@/lib/format'
 import { hasAtLeast } from '@/server/mythos/roles'
@@ -243,6 +244,8 @@ function Editor({ article, articles, initialTags }: { article: ArticleView; arti
             footer={<RelationshipPicker article={article} articles={articles} links={links} />}
           />
 
+          <EditorMedia articleId={article.id} />
+
           <div className="border-t border-border pt-6">
             <Button type="button" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setConfirmDelete(true)}>
               <Trash2 className="size-4" aria-hidden /> Delete article
@@ -338,4 +341,13 @@ function CategoryField({
       <FormError message={error} />
     </div>
   )
+}
+
+/** Images shown on the article; each change saves at once (ADR-025). */
+function EditorMedia({ articleId }: { articleId: string }) {
+  const { universe } = useUniverseContext()
+  const { attached, media, status } = useArticleMedia(universe.id, articleId)
+  if (status === 'loading') return null
+  if (status === 'error') return <p className="text-sm text-destructive">The gallery could not be loaded.</p>
+  return <ArticleMediaPicker articleId={articleId} attached={attached} gallery={media} galleryHref={`/u/${universe.id}/media`} />
 }

@@ -35,7 +35,10 @@ import { createActionTools } from './action-tools.js'
 import {
   authorizeCoverUpload,
   classifyFilesRequest,
-  countCoverUpload,
+  countUpload,
+  tooLargeMessage,
+  UPLOAD_RULES,
+  type UploadPurpose,
   extensionMatches,
   sniffImage,
   UploadRefused,
@@ -300,8 +303,8 @@ export function registerPlatformProxyRoutes(app: Hono<AppContext>): void {
   // platform bucket scopes keys to the verified app and, by default, user.
   app.all('/api/files/*', async (c) => {
     const url = new URL(c.req.url)
-    // Mythos only uploads cover images: narrow the gateway to reads of one
-    // file and validated cover uploads (src/server/mythos/uploads.ts).
+    // Mythos only uploads cover images and gallery maps/images: narrow the
+    // gateway to reads of one file and validated uploads (src/server/mythos/uploads.ts).
     const decision = classifyFilesRequest(c.req.method, url, c.req.header('Content-Length') ?? null)
     if (decision.kind === 'refuse') return c.json({ error: decision.error }, decision.status)
 
@@ -327,7 +330,7 @@ export function registerPlatformProxyRoutes(app: Hono<AppContext>): void {
 
     let body: BodyInit | null = c.req.raw.body
     if (decision.kind === 'upload' && userId) {
-      const checked = await checkCoverUpload(c.req.raw, c.env, userId, decision.key, decision.universeId, headers)
+      const checked = await checkUpload(c.req.raw, c.env, userId, decision.key, decision.universeId, decision.purpose, headers)
       if (checked instanceof Response) return checked
       body = checked
       // The rebuilt form carries its own boundary and length.
@@ -398,16 +401,17 @@ export function registerPlatformProxyRoutes(app: Hono<AppContext>): void {
 }
 
 /**
- * Validates a cover upload's bytes and the caller's right to upload, and
- * returns the form to forward (rebuilt around the checked file), or the
- * refusal to send back.
+ * Validates an upload's bytes and the caller's right to upload, and returns
+ * the form to forward (rebuilt around the checked file), or the refusal to
+ * send back.
  */
-async function checkCoverUpload(
+async function checkUpload(
   req: Request,
   env: Env,
   userId: string,
   key: string,
   universeId: string,
+  purpose: UploadPurpose,
   headers: Headers,
 ): Promise<FormData | Response> {
   const refuse = (status: number, error: string) =>
@@ -421,7 +425,7 @@ async function checkCoverUpload(
   }
   const file = form.get('file')
   if (!(file instanceof File)) return refuse(400, 'The upload carried no file.')
-  if (file.size > COVER_MAX_BYTES) return refuse(413, 'Cover images must be 5 MB or smaller.')
+  if (file.size > UPLOAD_RULES[purpose].maxBytes) return refuse(413, tooLargeMessage(purpose))
   const mime = sniffImage(new Uint8Array(await file.slice(0, 16).arrayBuffer()))
   if (!mime || !extensionMatches(key, mime)) return refuse(415, 'Choose a PNG, JPEG, WebP or GIF image.')
 
@@ -445,21 +449,21 @@ async function checkCoverUpload(
     method: 'HEAD',
     headers: probeHeaders,
   })
-  if (probe.status === 200) return refuse(409, 'That cover image already exists.')
+  if (probe.status === 200) return refuse(409, 'That image already exists.')
   if (probe.status !== 404) {
     console.error(`[files] existence check for ${key} answered ${probe.status}`)
     return refuse(503, 'The upload could not be checked. Try again shortly.')
   }
 
   try {
-    await countCoverUpload(system, userId)
+    await countUpload(system, userId, purpose)
   } catch (err) {
     return unchecked(err)
   }
 
   const name = form.get('name')
   const out = new FormData()
-  out.append('file', new File([file], file.name || 'cover', { type: mime }))
+  out.append('file', new File([file], file.name || purpose, { type: mime }))
   if (typeof name === 'string') out.append('name', name.slice(0, 200))
   return out
 }

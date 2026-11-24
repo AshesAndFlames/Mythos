@@ -6,6 +6,7 @@ import { History, PenLine } from 'lucide-react'
 import { CategoryBadge, StatusBadge, TagChip, TypeBadge } from '@/components/mythos/Badges'
 import { ArticleMiniCard } from '@/components/mythos/Cards'
 import { CoverImage } from '@/components/mythos/CoverImage'
+import { ArticleMediaStrip } from '@/components/mythos/Media'
 import { ConnectionsSection, useConnections } from '@/components/mythos/Relationships'
 import { RichTextView } from '@/components/mythos/RichTextEditor'
 import { ArticleSkeleton } from '@/components/mythos/Skeleton'
@@ -14,6 +15,7 @@ import { useUniverseContext } from '@/features/universes/context'
 import {
   combine,
   useArticle,
+  useArticleMedia,
   useArticleRevisions,
   useCategories,
   useLinks,
@@ -32,6 +34,7 @@ export default function ArticlePage() {
   const { byArticle } = useTags(universe.id)
   const { links, status: linkStatus } = useLinks(universe.id)
   const { revisions } = useArticleRevisions(universe.id, articleId)
+  const { attached } = useArticleMedia(universe.id, articleId)
   const names = useUserNames()
   const connections = useConnections(articleId, links, articles)
   const status = combine(articleStatus, linkStatus)
@@ -115,6 +118,11 @@ export default function ArticlePage() {
             ✦
           </div>
           <RichTextView articleId={article.id} />
+          {attached.length > 0 && (
+            <div className="mt-10">
+              <ArticleMediaStrip items={attached} />
+            </div>
+          )}
           <div className="mt-12">
             <ConnectionsSection
               groups={connections}

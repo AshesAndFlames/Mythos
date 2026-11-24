@@ -119,6 +119,8 @@ Every action follows the same steps: Zod-parse params → `requireRole` → same
 | Universes | `createUniverse`, `updateUniverse`, `deleteUniverse` | signed-in / owner / owner |
 | Members | `inviteMember` (also sends the invitation email, ADR-023), `listInvitations`, `revokeInvitation`, `setMemberRole`, `removeMember` | owner (`removeMember` on yourself: any member leaving) |
 | Invitations | `myInvitations`, `respondToInvitation` | signed in; only invitations addressed to the caller's account email |
+| Maps and images (ADR-025) | `addMedia`, `updateMedia`, `deleteMedia`, `setArticleMedia` | editor |
+| Account settings (ADR-026) | `setAccountSettings` | signed in; the caller's own row only |
 | Public universes (ADR-024) | `listPublicUniverses`, `getPublicUniverse`, `getPublicArticle`, `joinPublicUniverse` | signed in; the universe must be public (or the caller a member). Returns published content only |
 | Articles | `createArticle`, `renameArticle`, `deleteArticle` | editor |
 | Categories | `createCategory`, `updateCategory`, `deleteCategory` | editor |

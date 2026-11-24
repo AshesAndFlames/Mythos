@@ -13,7 +13,7 @@
 | # | Issue | Severity | Suggested fix |
 |---|---|---|---|
 | K-1 | Every signed-in user can see every Mythos user's name, avatar and last-seen time (the SDK roster), not just people who share a universe with them. | Medium | `roster: 'read-policy'` on `users`, plus a server action that returns names of co-members, used by the member list, activity feed, revisions and editor cursors. |
-| K-2 | Cover images are public to anyone holding the URL, and are not deleted with their article or universe. | Medium | Delete cover files from `deleteArticle` and `deleteUniverse` (server-side DELETE through the platform gateway). Moving to private files would need an authenticated image route. |
+| K-2 | Cover images and gallery maps/images are public to anyone holding the URL. Covers are not deleted with their article or universe (gallery files are, ADR-025). | Medium | Delete cover files from `deleteArticle` and `deleteUniverse` (server-side DELETE through the platform gateway). Moving to private files would need an authenticated image route. |
 | K-3 | No rate limiting on server actions; no cap on articles, categories or links per universe. | Medium | Per-user action budget in `usage`, plus caps per universe (for example 5,000 articles). |
 | K-4 | The Content-Security-Policy does not set `script-src`. | Low | Add `script-src 'self'` (and the hashes the prerendered page needs) in `public/_headers`, then test the AI chat and editor. |
 

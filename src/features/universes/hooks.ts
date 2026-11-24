@@ -14,9 +14,11 @@ import type {
   ActivityData,
   ArticleData,
   ArticleLinkData,
+  ArticleMediaData,
   ArticleRevisionData,
   ArticleTagData,
   CategoryData,
+  MediaData,
   TagData,
   TeamMemberData,
   UniverseData,
@@ -265,3 +267,39 @@ export function useActivity({ universeId, limit = 50 }: { universeId?: string; l
   return { entries, status }
 }
 
+
+// ── Maps and images (ADR-025) ─────────────────────────────────────────────
+
+export type MediaView = MediaData & { id: string; createdAt: string }
+
+/** A universe's gallery, newest first. */
+export function useMedia(universeId: string) {
+  const { records, status } = useQuery<MediaData>(COLLECTIONS.media, {
+    where: { universeId },
+    orderBy: 'createdAt',
+    orderDir: 'desc',
+  })
+  const media = useMemo<MediaView[]>(
+    () => records.map((r) => ({ ...r.data, id: r.recordId, createdAt: r.createdAt })),
+    [records],
+  )
+  return { media, status }
+}
+
+/** The gallery items an article shows, in order. */
+export function useArticleMedia(universeId: string, articleId: string) {
+  const { media, status: mediaStatus } = useMedia(universeId)
+  const { records, status: joinStatus } = useQuery<ArticleMediaData>(COLLECTIONS.articleMedia, {
+    where: { universeId, articleId },
+  })
+  const attached = useMemo<MediaView[]>(() => {
+    const byId = new Map(media.map((m) => [m.id, m]))
+    return [...records]
+      .sort((a, b) => a.data.sortOrder - b.data.sortOrder)
+      .flatMap((r) => {
+        const m = byId.get(r.data.mediaId)
+        return m ? [m] : []
+      })
+  }, [media, records])
+  return { attached, media, status: combine(mediaStatus, joinStatus) }
+}

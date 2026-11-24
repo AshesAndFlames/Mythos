@@ -20,6 +20,7 @@ import {
 import type { CollectionSchema } from 'deepspace/schema'
 import { schemas } from '../schemas'
 import {
+  accountSettingsSchema,
   activitySchema,
   articleLinksSchema,
   articleReferencesSchema,
@@ -189,8 +190,10 @@ describe('universe-owned collections are read-only to clients', () => {
 })
 
 describe('every universe-owned collection is scoped by its universe', () => {
-  // usage (per-user counters) and invitations (no client access at all) are tested below.
-  it.each(mythosSchemas.filter((s) => s.name !== 'usage' && s.name !== 'invitations').map((s) => [s.name, s] as const))(
+  // usage (per-user counters), invitations (no client access at all) and
+  // account_settings (per-user preferences) are tested below.
+  const perUser = ['usage', 'invitations', 'account_settings']
+  it.each(mythosSchemas.filter((s) => !perUser.includes(s.name)).map((s) => [s.name, s] as const))(
     '%s has a team field, denies anonymous and app viewers, and forbids client creates',
     (_n, schema) => {
       expect(schema.teamField).toBeTruthy()
@@ -214,6 +217,20 @@ describe('every universe-owned collection is scoped by its universe', () => {
       if (!schema.teamField) continue
       expect(canRead(schema, MEMBER, row({ [schema.teamField]: UNIVERSE_A }), VIEWER, none)).toBe(false)
     }
+  })
+})
+
+describe('account settings (ADR-026)', () => {
+  const mine = row({ userId: EDITOR, assistantEnabled: false })
+  it('each user reads only their own row', () => {
+    expect(canRead(accountSettingsSchema, MEMBER, mine, EDITOR, ctx)).toBe(true)
+    expect(canRead(accountSettingsSchema, MEMBER, mine, VIEWER, ctx)).toBe(false)
+    expect(canRead(accountSettingsSchema, '*', mine, EDITOR, ctx)).toBe(false)
+  })
+  it('no client writes them, not even their owner: only setAccountSettings does', () => {
+    expect(canCreate(accountSettingsSchema, MEMBER)).toBe(false)
+    expect(canUpdate(accountSettingsSchema, MEMBER, mine, EDITOR, ctx)).toBe(false)
+    expect(canDelete(accountSettingsSchema, MEMBER, mine, EDITOR, ctx)).toBe(false)
   })
 })
 

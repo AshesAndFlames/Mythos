@@ -20,6 +20,7 @@ import { useEffect, useState } from 'react'
 import { PanelRightClose, PanelRightOpen, Plus } from 'lucide-react'
 import { useAuth, AuthOverlay } from 'deepspace'
 import { ChatPanel } from '../chat/ChatPanel'
+import { useAccountSettings } from '@/features/account/hooks'
 import { Button } from '../ui'
 import { cn } from '../../lib/utils'
 
@@ -53,7 +54,18 @@ function useIsDesktop(): boolean {
   return isDesktop
 }
 
+/**
+ * Hidden for accounts that turned the assistant off in Settings (ADR-026).
+ * Waits for the setting before mounting so the dock never flashes; the chat
+ * endpoint refuses those accounts regardless.
+ */
 export function ChatDock() {
+  const { assistantEnabled, status } = useAccountSettings()
+  if (status === 'loading' || (status === 'ready' && !assistantEnabled)) return null
+  return <AssistantDock />
+}
+
+function AssistantDock() {
   const { isSignedIn, userId } = useAuth()
   const isDesktop = useIsDesktop()
 

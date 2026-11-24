@@ -247,7 +247,7 @@ Relationship types and inverse labels (the inverse is computed in the UI from on
 |---|---|---|
 | `userId` | T | Req, Imm |
 | `day` | T (YYYY-MM-DD, UTC) | Req, Imm |
-| `kind` | T select `ai_text,ai_chat,image,research,upload,invite_email` | Req, Imm. `upload` (ADR-022) counts cover uploads, `invite_email` (ADR-023) counts invitation emails, each against a per-user daily cap |
+| `kind` | T select `ai_text,ai_chat,image,research,upload,invite_email,media_upload` | Req, Imm. `upload` (ADR-022) counts cover uploads, `invite_email` (ADR-023) invitation emails, `media_upload` (ADR-025) gallery uploads, each against a per-user daily cap |
 | `count` | N | Req |
 
 - `uniqueOn: ['userId','day','kind']`.
@@ -335,3 +335,29 @@ The DO filters in SQLite. The SDK creates a unique index for each `uniqueOn` (sl
 ## 8. Seed data (local development)
 
 `seedExampleUniverse` builds "The Shattered Realms" (4 categories, 5 articles, tags, 6 relationships, one revision per article) by calling the real actions as the caller, so seed rows pass the same validation and role checks as user input. It refuses to run when the worker has the production `PLATFORM_WORKER` binding. The backend test (`tests/mythos-backend.spec.ts`) uses it.
+
+## media (ADR-025)
+
+| Column | Type | Rules | Notes |
+|---|---|---|---|
+| `universeId` | T plain | Req, Imm | `teamField` |
+| `key` | T plain ≤200 | Req, Imm, unique | `media/<universeId>/<uuid>.<ext>` |
+| `title` | T plain ≤120 | Req | |
+| `caption` | T plain ≤1000 | | |
+| `kind` | T select `map,image` | Req | |
+| `uploadedBy` | T plain | Req, Imm | |
+
+Permissions: universe-owned (members read; no client writes). At most 300 per universe.
+
+## article_media (ADR-025)
+
+`universeId` (teamField), `articleId`, `mediaId`, `sortOrder` (number). `uniqueOn: ['articleId','mediaId']`. Universe-owned. At most 12 per article.
+
+## account_settings (ADR-026)
+
+| Column | Type | Rules | Notes |
+|---|---|---|---|
+| `userId` | T plain | Req, Imm, unique | `ownerField` |
+| `assistantEnabled` | N boolean | default true | |
+
+Permissions: `member` reads its own row only; no client role may create, update or delete. Written by `setAccountSettings`.
