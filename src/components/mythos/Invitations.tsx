@@ -46,7 +46,7 @@ export function InvitationsPanel() {
     setInvitations((list) => (list ?? []).filter((i) => i.invitationId !== inv.invitationId))
     if (accept) {
       toast.success(`You joined ${inv.universeName} as ${inv.role}`)
-      navigate(`/u/${inv.universeId}`)
+      navigate(`/u/${inv.universeId}`, { state: { justJoined: true } })
     } else {
       toast.success(`Declined the invitation to ${inv.universeName}`)
     }

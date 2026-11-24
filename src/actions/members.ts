@@ -202,7 +202,7 @@ export const myInvitations = mythosAction('myInvitations', noParamsSchema, async
  * up with: an existing active member keeps their role, so accepting can
  * never demote anyone (or touch the owner).
  */
-async function joinUniverse(
+export async function joinUniverse(
   tools: ActionTools,
   system: ActionTools,
   universeId: string,

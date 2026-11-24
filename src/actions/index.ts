@@ -19,6 +19,7 @@ import {
   revokeInvitation,
   setMemberRole,
 } from './members'
+import { getPublicArticle, getPublicUniverse, joinPublicUniverse, listPublicUniverses } from './public'
 import { restoreRevision, saveRevision } from './revisions'
 import { seedExampleUniverse } from './seed'
 import { deleteTag, setArticleTags } from './tags'
@@ -42,6 +43,11 @@ export const actions: Record<string, ActionHandler<Env>> = {
   // Invitations (the invitee, matched by account email)
   myInvitations,
   respondToInvitation,
+  // Public universes (any signed-in user; public or member only)
+  listPublicUniverses,
+  getPublicUniverse,
+  getPublicArticle,
+  joinPublicUniverse,
   // Articles (editor)
   createArticle,
   renameArticle,

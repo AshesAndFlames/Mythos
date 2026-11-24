@@ -4,8 +4,8 @@
  * the page. Pages read both through `useUniverseContext()`.
  */
 
-import { useMemo, useState } from 'react'
-import { NavLink, Outlet, useParams } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { Navigate, NavLink, Outlet, useLocation, useParams } from 'react-router-dom'
 import { BookOpenText, Feather, History, LayoutDashboard, Settings2, Users } from 'lucide-react'
 import { CoverImage } from '@/components/mythos/CoverImage'
 import { NewArticleDialog } from '@/components/mythos/Dialogs'
@@ -17,9 +17,24 @@ import { useArticles, useCategories, useUniverse } from '@/features/universes/ho
 import { hasAtLeast } from '@/server/mythos/roles'
 import { cn } from '@/lib/utils'
 
+/** Navigation state set by joining or accepting an invitation: the membership may not have synced yet. */
+export interface JustJoinedState {
+  justJoined?: boolean
+}
+
+/** How long a just-joined member waits for their membership to arrive before giving up. */
+const JOIN_SYNC_GRACE_MS = 10_000
+
 export default function UniverseLayout() {
   const { universeId = '' } = useParams()
   const { universe, role, status } = useUniverse(universeId)
+  const justJoined = Boolean((useLocation().state as JustJoinedState | null)?.justJoined)
+  const [graceOver, setGraceOver] = useState(!justJoined)
+  useEffect(() => {
+    if (!justJoined) return
+    const t = setTimeout(() => setGraceOver(true), JOIN_SYNC_GRACE_MS)
+    return () => clearTimeout(t)
+  }, [justJoined])
   const [creating, setCreating] = useState(false)
   const context = useMemo<UniverseContext | null>(
     () => (universe && role ? { universe, role, newArticle: () => setCreating(true) } : null),
@@ -28,7 +43,13 @@ export default function UniverseLayout() {
 
   if (status === 'loading') return <PageSkeleton label="Opening the universe…" />
   if (status === 'error') return <ErrorView message="This universe could not be loaded. Refresh to try again." />
-  if (!context) return <NotFoundView what="Universe" />
+  if (!context) {
+    // Just joined: the live membership row can lag the action; wait for it.
+    if (!graceOver) return <PageSkeleton label="Opening the universe…" />
+    // Not a member: the public view answers for a public universe, and shows
+    // the same "not found" as here for anything else (ADR-024).
+    return universeId && !justJoined ? <Navigate to={`/p/${universeId}`} replace /> : <NotFoundView what="Universe" />
+  }
 
   const canEdit = hasAtLeast(context.role, 'editor')
   return (

@@ -212,3 +212,13 @@ export function firstIssue(error: z.ZodError): string {
     ? `${field}: ${issue.message}`
     : issue.message
 }
+
+/** Explore's search box: optional, trimmed, bounded. */
+export const listPublicUniversesSchema = z.object({
+  query: z.string().trim().max(LIMITS.universeName).optional(),
+})
+
+export const publicArticleSchema = z.object({
+  universeId: recordIdSchema,
+  articleId: recordIdSchema,
+})

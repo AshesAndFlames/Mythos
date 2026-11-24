@@ -54,9 +54,13 @@ const DIRECTION: Record<ConnectionDirection, { Icon: typeof ArrowRight; label: s
   mutual: { Icon: ArrowLeftRight, label: 'Mutual' },
 }
 
+/** What the Connections section shows of the article at the other end. */
+type ConnectedArticle = Pick<ArticleView, 'id' | 'title' | 'type' | 'coverImageKey'>
+
 /**
  * The Connections section. `canEdit` adds a remove button to each connection
- * (the server still checks the role).
+ * (the server still checks the role). `basePath` is where article links go:
+ * `/u` for members, `/p` on the public view.
  */
 export function ConnectionsSection({
   groups,
@@ -66,9 +70,11 @@ export function ConnectionsSection({
   emptyText,
   compact = false,
   footer,
+  basePath = '/u',
 }: {
-  groups: ConnectionGroup<ArticleView>[]
+  groups: ConnectionGroup<ConnectedArticle>[]
   universeId: string
+  basePath?: '/u' | '/p'
   articleTitle: string
   canEdit: boolean
   emptyText: string
@@ -76,7 +82,7 @@ export function ConnectionsSection({
   footer?: React.ReactNode
 }) {
   const toast = useToast()
-  const [removing, setRemoving] = useState<Connection<ArticleView> | null>(null)
+  const [removing, setRemoving] = useState<Connection<ConnectedArticle> | null>(null)
   const total = groups.reduce((n, g) => n + g.items.length, 0)
   const count = (d: ConnectionDirection) => groups.filter((g) => g.direction === d).reduce((n, g) => n + g.items.length, 0)
   const mutual = count('mutual')
@@ -127,7 +133,7 @@ export function ConnectionsSection({
                       </div>
                       <div className="min-w-0 flex-1">
                         <Link
-                          to={`/u/${universeId}/a/${item.other.id}`}
+                          to={`${basePath}/${universeId}/a/${item.other.id}`}
                           className="block truncate font-display text-lg font-semibold leading-tight text-foreground hover:text-primary"
                         >
                           {item.other.title}

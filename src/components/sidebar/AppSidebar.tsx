@@ -23,6 +23,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { AuthOverlay, useAuthProfileReady, signOut } from 'deepspace'
 import {
   Box,
+  Compass,
   Globe2,
   ChevronDown,
   Home,
@@ -58,6 +59,7 @@ import {
 const NAV_ICONS: Record<string, LucideIcon> = {
   '/home': Home,
   '/universes': Globe2,
+  '/explore': Compass,
   '/settings': Settings,
 }
 

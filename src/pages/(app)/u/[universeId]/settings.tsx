@@ -1,5 +1,5 @@
 /**
- * Universe settings (owner only): details, cover and deletion. Members are
+ * Universe settings (owner only): details, cover, visibility and deletion. Members are
  * managed on the Members page. The server refuses these actions for anyone
  * but the owner; this page only spares others controls they cannot use.
  */
@@ -10,7 +10,7 @@ import { Button, Input, Label, Textarea, useToast } from '@/components/ui'
 import { CoverPicker } from '@/components/mythos/CoverUpload'
 import { TypeToConfirmDialog } from '@/components/mythos/Dialogs'
 import { FormError } from '@/components/mythos/StatusViews'
-import { LIMITS } from '@/domain/mythos'
+import { LIMITS, type UniverseVisibility } from '@/domain/mythos'
 import { useUniverseContext } from '@/features/universes/context'
 import { callAction } from '@/lib/actions'
 
@@ -26,6 +26,7 @@ export default function UniverseSettingsPage() {
       {isOwner ? (
         <>
           <DetailsSection />
+          <VisibilitySection />
           <DangerZone />
         </>
       ) : (
@@ -104,6 +105,82 @@ function DetailsSection() {
         <Button type="submit" loading={busy} disabled={!changed || !name.trim()}>
           Save changes
         </Button>
+      </form>
+    </Section>
+  )
+}
+
+const VISIBILITY_OPTIONS: { value: UniverseVisibility; label: string; help: string }[] = [
+  {
+    value: 'private',
+    label: 'Private',
+    help: 'Only members can find or read it. People join by invitation.',
+  },
+  {
+    value: 'public',
+    label: 'Public',
+    help:
+      'Listed on Explore. Anyone signed in to Mythos can read its published articles, and can join as a viewer. Viewers see everything members see, including drafts, the activity feed and the member list.',
+  },
+]
+
+function VisibilitySection() {
+  const { universe } = useUniverseContext()
+  const toast = useToast()
+  const [value, setValue] = useState<UniverseVisibility>(universe.visibility ?? 'private')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setError(null)
+    const res = await callAction('updateUniverse', { universeId: universe.id, visibility: value })
+    setBusy(false)
+    if (!res.ok) return setError(res.error)
+    toast.success(value === 'public' ? `${universe.name} is now public` : `${universe.name} is now private`)
+  }
+
+  return (
+    <Section title="Visibility" description="Who can find and read this universe.">
+      <form onSubmit={submit} className="space-y-4">
+        <fieldset className="space-y-2" aria-label="Visibility">
+          {VISIBILITY_OPTIONS.map((o) => (
+            <label
+              key={o.value}
+              className="flex cursor-pointer gap-3 rounded-xl border border-border bg-card p-4 has-[:checked]:border-primary/50"
+            >
+              <input
+                type="radio"
+                name="visibility"
+                value={o.value}
+                checked={value === o.value}
+                onChange={() => setValue(o.value)}
+                className="mt-1 accent-[var(--primary)]"
+                data-testid={`visibility-${o.value}`}
+              />
+              <span>
+                <span className="block font-medium text-foreground">{o.label}</span>
+                <span className="block text-sm text-muted-foreground">{o.help}</span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+        <p className="text-sm text-muted-foreground">
+          Making it private again hides it from Explore and non-members straight away. People who already joined stay members
+          until you remove them.
+        </p>
+        <FormError message={error} testId="visibility-error" />
+        <div className="flex flex-wrap items-center gap-4">
+          <Button type="submit" loading={busy} disabled={value === (universe.visibility ?? 'private')} data-testid="save-visibility">
+            Save visibility
+          </Button>
+          {universe.visibility === 'public' && (
+            <Link to={`/p/${universe.id}`} className="text-sm text-primary hover:underline">
+              See the public page
+            </Link>
+          )}
+        </div>
       </form>
     </Section>
   )

@@ -76,7 +76,7 @@ Keep `BASE_USERS_SCHEMA` / `USERS_COLUMNS` unchanged, with `member: { read: 'own
 | `description` | T plain | | ≤ 5,000 |
 | `artStyle` | T plain | | ≤ 300; image prompt suffix |
 | `coverImageKey` | T plain | | `''` or `covers/<universeId>/<uuid>.<ext>` in the app file store; keys saved before ADR-022 are `covers/<uuid>.<ext>` and stay valid (ADR-019, ADR-022) |
-| `visibility` | T select `private` | default `private` | Only `private` today (ADR-017) |
+| `visibility` | T select `private,public` | default `private` | Owner-set through `updateUniverse`. `public` opens the public read path (ADR-024); it does not change any collection's RBAC |
 | `ownerId` | T plain | Imm | Creator |
 | `editorIds` | T json | | Server-maintained: owner + editors |
 

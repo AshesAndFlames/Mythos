@@ -115,7 +115,8 @@ test('backend enforces universe boundaries and roles', async ({ users }) => {
     const renamed = ok(await asAlice('updateUniverse', { universeId: A, name: 'The Shattered Realms II' }))
     // `-n` when an earlier, interrupted run left a seeded universe behind.
     expect(renamed.slug).toMatch(/^the-shattered-realms-ii(-\d+)?$/)
-    refused(await asAlice('updateUniverse', { universeId: A, visibility: 'public' }), /visibility/i)
+    // Only 'private' and 'public' exist (ADR-024).
+    refused(await asAlice('updateUniverse', { universeId: A, visibility: 'unlisted' }), /visibility|Invalid|option/i)
     refused(await asAlice('deleteUniverse', { universeId: A, confirmName: 'wrong' }), /exactly/)
   })
 

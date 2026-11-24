@@ -27,6 +27,7 @@
 | K-8 | Editors can delete articles. The brief's editor role does not mention deletion; confirm whether it should be owner-only. | Low (product decision) |
 | K-9 | Registration and sign-in are DeepSpace's hosted flow. The QA run used pre-registered test accounts, so creating a brand-new account was not exercised end to end. Signed-out visitors are verified to get the sign-in prompt. | Info |
 | K-10 | Nothing stops a user starting several cover uploads (or invitations) at once and going slightly over the daily caps (40 uploads, 20 invitation emails), because the count is read and then written. | Low |
+| K-15 | Anyone signed in can join a public universe as a viewer, and viewers see drafts, activity and the member list. There is no ban list: a removed member can rejoin while it is public (ADR-024). | Medium (product decision) |
 
 ## Code and UX
 

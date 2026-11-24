@@ -129,9 +129,10 @@ describe('action input validation', () => {
     expect(setArticleTagsSchema.safeParse({ articleId: 'a', tags: [' '] }).success).toBe(false)
   })
 
-  it('only allows private visibility today', () => {
+  it('allows private and public visibility only (ADR-024)', () => {
     expect(updateUniverseSettingsSchema.safeParse({ universeId: 'u', visibility: 'private' }).success).toBe(true)
-    expect(updateUniverseSettingsSchema.safeParse({ universeId: 'u', visibility: 'public' }).success).toBe(false)
+    expect(updateUniverseSettingsSchema.safeParse({ universeId: 'u', visibility: 'public' }).success).toBe(true)
+    expect(updateUniverseSettingsSchema.safeParse({ universeId: 'u', visibility: 'unlisted' }).success).toBe(false)
     expect(updateUniverseSettingsSchema.safeParse({ universeId: 'u' }).success).toBe(false)
   })
 

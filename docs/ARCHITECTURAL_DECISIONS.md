@@ -199,7 +199,7 @@ The fallback is not needed.
 **Context:** The backend brief asked for profiles, universes with visibility, tags and article_tags, typed relationships, and article revisions, all with RLS-equivalent security.
 
 **Decisions:**
-1. **Visibility is `private` only.** `universes.visibility` exists, but its `select` allows only `private`. The permission system cannot express "members OR public" on one collection, so public universes need their own read path and design. Chosen by the user.
+1. **Visibility is `private` only.** `universes.visibility` exists, but its `select` allows only `private`. The permission system cannot express "members OR public" on one collection, so public universes need their own read path and design. Chosen by the user. *(Superseded by ADR-024, which adds `public` with its own read path.)*
 2. **Revisions are editor snapshots.** The live body stays a collaborative Yjs document. `saveRevision` receives the editor's rich-text JSON, validates it (`richTextDocSchema`), copies title and summary from the server's row, skips identical saves by fingerprint, and keeps 50 per article. `restoreRevision` restores title and summary and returns the body, which the editor applies and saves as a new version. The server cannot render the Yjs document as rich text, so a snapshot can only be as true as the editor that sends it. Only editors can send one, and they can edit the article anyway. Chosen by the user.
 3. **Tags are collections** (`tags` and `article_tags`), not a JSON column. **Breaking change:** `articles.tags` was removed. *Backfill:* none needed. No action or UI ever wrote a non-empty `tags` value (createArticle wrote `[]`, and no client control existed). Had there been data, a one-off action would have read each article's `tags` and called `setArticleTags`.
 4. **Reference, unique and JSON fields are action-only.** `categoryId`, `title`, and `infobox` left `writableFields`. Before this, an editor could set `categoryId` to a category in another universe. Now `setArticleCategory` checks the universe, and `setArticleInfobox` bounds the JSON with Zod.
@@ -331,3 +331,28 @@ The user proposed recycling deleted articles' ids for new articles. That would h
 - The cap is read then written, so simultaneous invites can overshoot it slightly (as K-10 for uploads).
 - Delivery is not tracked beyond the service accepting the message; a bounced email is not reported to the owner.
 - There is no "resend" button; inviting the same address again resends (and counts against the cap).
+
+## ADR-024: Public universes for signed-in readers
+**Status:** **Accepted** (2026-11-23)
+
+**Context:** The user asked for public universes. ADR-017 kept visibility `private` because one collection's RBAC cannot say "members OR public", and ADR-010 keeps the app behind sign-in. The user chose: readable by **any signed-in user** (not signed-out visitors), found through an **Explore page and direct links**, non-members see **published articles only**, and non-members may **join as a viewer**.
+
+**Decision:**
+1. **`universes.visibility` gains `public`.** The owner sets it in Settings → Visibility (`updateUniverse`, owner-only as before). It is a widened enum: no backfill, every existing universe stays `private`.
+2. **No collection permission changes.** Every Mythos collection stays `read: 'team'`, so non-members never receive live rows or Yjs bodies. Instead four server actions (`src/actions/public.ts`) read with server tools and return a projection:
+   - `listPublicUniverses` (Explore; optional search on name and tagline; the 48 most recently updated matches);
+   - `getPublicUniverse` (details, published articles with tags, and only the categories that hold a published article, with their ancestors);
+   - `getPublicArticle` (one published article, its category and tags, author name, connections whose both ends are published, and its body);
+   - `joinPublicUniverse` (adds the caller as a viewer).
+   Each re-checks visibility on every call. A missing or private universe answers "Universe not found" to a non-member, so private universes cannot be probed. Members may also use the public view.
+3. **The public body is the latest saved version.** The live body is a Yjs document the server cannot render as rich text (ADR-017), and only `saveArticle` can publish, recording a version as it does. So a published article's latest version is what was published; unsaved live edits are not shown until someone saves. It renders through a read-only Tiptap instance with the editor's schema (no HTML injection) and the same link allow-list.
+4. **What non-members never see:** drafts, categories that hold only drafts, connections to drafts, live edits, version history, members, invitations and activity. The filtering lives in `src/domain/public.ts` and is unit tested.
+5. **Joining.** `joinPublicUniverse` gives a non-member the `viewer` role (an existing member keeps their role). Someone with a pending invitation to that universe is refused and told to accept it instead, because accepting never changes an existing member's role (ADR-021) and would otherwise leave them stuck as a viewer. Joining records a `member_joined` activity entry.
+6. **Routes.** `/explore` (sidebar item "Explore"), `/p/:universeId` and `/p/:universeId/a/:articleId`. A non-member opening `/u/:universeId` is redirected to `/p/:universeId`, which shows the public view or "not found".
+
+**Consequences and limits:**
+- **A viewer sees everything members see, drafts included.** Because anyone can join a public universe as a viewer, its drafts, activity feed and member list are effectively open to any signed-in user who joins. The Visibility setting says so. A "published-only viewer" would need a new role.
+- Making a universe private again hides it from Explore and non-members on the next request; people who joined stay members until the owner removes them. A removed member of a public universe can join again (there is no ban list).
+- Cover images were already public by URL (K-2).
+- Explore and the public pages load once (not live) and count articles per listed universe with one query each, which is fine at the 48-universe page size but would need a stored count at larger scale.
+- Signed-out visitors still cannot read anything (ADR-010 unchanged). Search engines see nothing.

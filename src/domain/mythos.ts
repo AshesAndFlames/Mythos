@@ -57,10 +57,11 @@ export const ACTIVITY_KINDS = [
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number]
 
 /**
- * Universe visibility. Only 'private' exists today: Mythos is a members-only
- * app (ADR-010). Public universes need their own read path (ADR-017).
+ * Universe visibility. 'private': members only. 'public': any signed-in user
+ * can read its published articles through the public read actions and join
+ * as a viewer (ADR-024). The collections' RBAC is the same for both.
  */
-export const UNIVERSE_VISIBILITIES = ['private'] as const
+export const UNIVERSE_VISIBILITIES = ['private', 'public'] as const
 export type UniverseVisibility = (typeof UNIVERSE_VISIBILITIES)[number]
 
 export const LINK_TYPES = [

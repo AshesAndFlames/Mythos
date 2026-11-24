@@ -309,6 +309,62 @@ export function RichTextEditor({ body, toolbarClassName }: { body: ArticleBody; 
   )
 }
 
+/**
+ * Read view of a saved version's rich-text JSON (public pages, ADR-024).
+ * Rendered by a non-editable Tiptap instance with the editor's schema, so
+ * unknown nodes are dropped and no HTML string is ever injected.
+ */
+export function RichTextSnapshotView({ content }: { content: RichTextNode | null }) {
+  const extensions = useMemo<AnyExtension[]>(
+    () => [
+      StarterKit.configure({
+        undoRedo: false,
+        link: {
+          openOnClick: true,
+          autolink: false,
+          protocols: ['http', 'https', 'mailto'],
+          isAllowedUri: (url) => SAFE_LINK.test(url),
+          HTMLAttributes: { rel: 'noopener noreferrer nofollow', target: '_blank' },
+        },
+      }),
+      Typography,
+    ],
+    [],
+  )
+  const editor = useEditor(
+    {
+      editable: false,
+      immediatelyRender: false,
+      extensions,
+      content: content ?? undefined,
+      editorProps: { attributes: { class: 'mythos-prose', 'data-testid': 'article-body-snapshot' } },
+    },
+    [extensions, content],
+  )
+  const isEmpty = useEditorState({ editor, selector: ({ editor: e }) => (e ? e.isEmpty : true) })
+
+  if (!content) {
+    return <p className="font-serif italic text-muted-foreground">Nothing has been written here yet.</p>
+  }
+  if (!editor) {
+    return (
+      <div role="status" aria-live="polite" className="space-y-3">
+        <span className="sr-only">Loading the article…</span>
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-11/12" />
+      </div>
+    )
+  }
+  return (
+    <div data-testid="article-body-view">
+      {isEmpty && <p className="font-serif italic text-muted-foreground">Nothing has been written here yet.</p>}
+      <div className={cn('mythos-dropcap', isEmpty && 'hidden')}>
+        <EditorContent editor={editor} />
+      </div>
+    </div>
+  )
+}
+
 /** Read view of the live body (updates in real time, never editable). */
 export function RichTextView({ articleId }: { articleId: string }) {
   const body = useArticleBody(articleId, { editable: false })

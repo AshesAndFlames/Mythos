@@ -26,7 +26,7 @@ Roles inside a universe:
 | **Owner** | Everything: settings, members and roles, delete the universe |
 | **Editor** | Create, edit and delete articles, links, categories and references. Use AI and image tools |
 | **Viewer** | Read and browse everything in the universe. Use research and the Lore Assistant read-only |
-| *Non-member* | Nothing. The universe is invisible to them |
+| *Non-member* | Private universe: nothing, it is invisible to them. Public universe (ADR-024): finds it on Explore, reads its published articles, and can join as a viewer |
 
 App-level `admin` is the app owner, for support and moderation only.
 
@@ -106,7 +106,7 @@ App-level `admin` is the app owner, for support and moderation only.
 
 ## 6. Out of scope for MVP
 
-- Public or published universes.
+- ~~Public or published universes.~~ Added after MVP: public universes for signed-in users (ADR-024). Signed-out access is still out of scope.
 - Payments.
 - Mobile app.
 - Maps.
