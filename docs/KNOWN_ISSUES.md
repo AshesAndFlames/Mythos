@@ -1,12 +1,12 @@
 # Known issues
 
-**As of:** 2026-11-20, after the production readiness review. Each entry has a severity, the impact on users, and the suggested fix. Security items are detailed in SECURITY_REVIEW.md.
+**As of:** 2026-11-24 (release #8). First written 2026-11-20, after the production readiness review. Each entry has a severity, the impact on users, and the suggested fix. Security items are detailed in SECURITY_REVIEW.md.
 
 ## Before release
 
 | # | Issue | Severity |
 |---|---|---|
-| K-0 | **The cover-upload fix (S-1, ADR-022) is not deployed.** Production still lets any signed-in user list, overwrite and delete covers. Deploy this change. | High until deployed |
+| K-0 | ~~The cover-upload fix (S-1, ADR-022) is not deployed.~~ **Resolved:** deployed with release #7 (2026-11-21) and in every release since. | Resolved |
 
 ## Security and privacy
 
