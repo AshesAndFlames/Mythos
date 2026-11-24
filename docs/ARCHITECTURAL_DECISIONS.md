@@ -290,7 +290,7 @@ The user proposed recycling deleted articles' ids for new articles. That would h
 8. **Pages:** Members (everyone; owner manages invitations, roles and removal), Activity (everyone), Settings (owner only). The dashboard shows pending invitations and the cross-universe feed.
 
 **Consequences and limits:**
-- No invitation email is sent; the invitee sees it on their dashboard after signing in. Sending one would use the `email/send` integration (a paid call) behind the owner check and a per-user cap.
+- No invitation email is sent; the invitee sees it on their dashboard after signing in. *(Superseded by ADR-023, which adds the email.)*
 - Live body edits (Yjs) and direct `summary`/`type` changes are not recorded; saving the article records an update.
 - Role changes, removals and article deletions are not in the feed (not requested).
 - The feed shows the latest 100 entries per universe; there is no paging or pruning yet.
@@ -312,3 +312,22 @@ The user proposed recycling deleted articles' ids for new articles. That would h
 - Cover files are still public to anyone holding the URL (app scope), and are not deleted when an article or universe is deleted.
 - Cover uploads by the assistant or other clients must follow the same key rule.
 
+## ADR-023: Invitation emails
+**Status:** **Accepted** (2026-11-23)
+
+**Context:** ADR-021 shipped invitations without an email (KNOWN_ISSUES K-5), so owners had to tell invitees themselves. DeepSpace's `email/send` integration (Resend; $0.013 a message, billed to the app owner) can send it.
+
+**Decision:**
+1. **`inviteMember` emails the invitee after the invitation is saved,** every time it succeeds (a re-invite that changes the role sends again). The call is made only after the owner check, from the server, with the system tools (developer billing). Code: `src/server/mythos/invite-email.ts`.
+2. **The email is a notification, not a credential.** It names the inviter, universe and role and links to the app's fixed URL (`APP_URL`, `https://mythos.app.space`, never taken from the request). It carries no token: the invitee still signs in with the invited address and accepts on the dashboard, so a forwarded email grants nothing. Inviter and universe names are user-supplied, so they are flattened to one line, length-bounded and HTML-escaped. No `reply_to`, so the owner's address is not disclosed.
+3. **Per-user daily cap:** 20 invitation emails per inviting user per UTC day, counted in `usage` (new kind `invite_email`) by the system identity. Past the cap the invitation is still saved and no email is sent. The cover-upload cap (ADR-022) now uses the same helper (`src/server/mythos/usage.ts`).
+4. **The invitation stands whatever happens to the email.** `inviteMember` returns `emailStatus`: `sent`, `skipped`, `limit` or `failed`. The Members page shows a success toast for `sent` and `skipped`, and a warning telling the owner to let the person know for `limit` and `failed`. Failures are logged with the inviter's id (not the recipient's address).
+5. **Undeliverable addresses are skipped:** DeepSpace test accounts (`@deepspace.test`) and reserved domains (`example.com/.net/.org`, `.test`, `.example`, `.invalid`, `.localhost`). Tests therefore exercise the flow without sending mail or spending credits.
+
+**Schema and data:** `usage.kind` gains `invite_email` (widened, not tightened). **Backfill:** none needed.
+
+**Consequences and limits:**
+- Local development uses the same owner credentials, so inviting a real address from `npm run dev` sends a real, billed email whose link points at production.
+- The cap is read then written, so simultaneous invites can overshoot it slightly (as K-10 for uploads).
+- Delivery is not tracked beyond the service accepting the message; a bounced email is not reported to the owner.
+- There is no "resend" button; inviting the same address again resends (and counts against the cap).

@@ -86,7 +86,7 @@ export type LinkType = (typeof LINK_TYPES)[number]
 
 export const REFERENCE_SOURCES = ['wikipedia', 'web', 'manual'] as const
 /** `upload` counts cover-image uploads against a per-user daily cap. */
-export const USAGE_KINDS = ['ai_text', 'ai_chat', 'image', 'research', 'upload'] as const
+export const USAGE_KINDS = ['ai_text', 'ai_chat', 'image', 'research', 'upload', 'invite_email'] as const
 export type UsageKind = (typeof USAGE_KINDS)[number]
 
 export const LIMITS = {

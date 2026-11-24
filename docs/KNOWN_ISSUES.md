@@ -21,12 +21,12 @@
 
 | # | Issue | Severity |
 |---|---|---|
-| K-5 | **No invitation email is sent.** Invitees only see invitations on their dashboard after signing in with the invited address, so the owner has to tell them. | Medium |
+| K-5 | ~~No invitation email is sent.~~ **Resolved (ADR-023):** `inviteMember` emails the invitee, capped at 20 a day per inviter. If the cap is reached or sending fails, the owner is told to let the person know. | Resolved |
 | K-6 | The dashboard's invitation list loads once. A new invitation shows only after a reload (invitations are deliberately not live-synced; ADR-021). | Low |
 | K-7 | The activity feed does not record live body edits (until someone saves), summary/type changes made directly (for example by the assistant), role changes, removals or deletions. It shows the latest 100 entries per universe, with no paging or pruning. | Low |
 | K-8 | Editors can delete articles. The brief's editor role does not mention deletion; confirm whether it should be owner-only. | Low (product decision) |
 | K-9 | Registration and sign-in are DeepSpace's hosted flow. The QA run used pre-registered test accounts, so creating a brand-new account was not exercised end to end. Signed-out visitors are verified to get the sign-in prompt. | Info |
-| K-10 | Nothing stops a user starting several cover uploads at once and going slightly over the daily cap of 40, because the count is read and then written. | Low |
+| K-10 | Nothing stops a user starting several cover uploads (or invitations) at once and going slightly over the daily caps (40 uploads, 20 invitation emails), because the count is read and then written. | Low |
 
 ## Code and UX
 

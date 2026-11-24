@@ -247,7 +247,7 @@ Relationship types and inverse labels (the inverse is computed in the UI from on
 |---|---|---|
 | `userId` | T | Req, Imm |
 | `day` | T (YYYY-MM-DD, UTC) | Req, Imm |
-| `kind` | T select `ai_text,ai_chat,image,research,upload` | Req, Imm. `upload` (ADR-022) counts cover uploads against a per-user daily cap |
+| `kind` | T select `ai_text,ai_chat,image,research,upload,invite_email` | Req, Imm. `upload` (ADR-022) counts cover uploads, `invite_email` (ADR-023) counts invitation emails, each against a per-user daily cap |
 | `count` | N | Req |
 
 - `uniqueOn: ['userId','day','kind']`.

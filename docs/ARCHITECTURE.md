@@ -117,7 +117,7 @@ Every action follows the same steps: Zod-parse params → `requireRole` → same
 | Group | Actions | Minimum role |
 |---|---|---|
 | Universes | `createUniverse`, `updateUniverse`, `deleteUniverse` | signed-in / owner / owner |
-| Members | `inviteMember`, `listInvitations`, `revokeInvitation`, `setMemberRole`, `removeMember` | owner (`removeMember` on yourself: any member leaving) |
+| Members | `inviteMember` (also sends the invitation email, ADR-023), `listInvitations`, `revokeInvitation`, `setMemberRole`, `removeMember` | owner (`removeMember` on yourself: any member leaving) |
 | Invitations | `myInvitations`, `respondToInvitation` | signed in; only invitations addressed to the caller's account email |
 | Articles | `createArticle`, `renameArticle`, `deleteArticle` | editor |
 | Categories | `createCategory`, `updateCategory`, `deleteCategory` | editor |

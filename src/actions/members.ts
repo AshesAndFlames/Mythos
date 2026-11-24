@@ -4,6 +4,7 @@ import { COLLECTIONS, LIMITS, type AssignableRole } from '../domain/mythos'
 import type { InvitationData, TeamMemberData } from '../domain/records'
 import { mythosAction, UserError } from '../server/mythos/action'
 import { recordActivity } from '../server/mythos/activity'
+import { sendInvitationEmail } from '../server/mythos/invite-email'
 import { AccessDenied, currentEditorIds, fanOutEditorIds, requireRole } from '../server/mythos/membership'
 import { getMembership, getRecord, getUniverse, mustSucceed, queryAll, type Envelope } from '../server/mythos/store'
 import {
@@ -43,12 +44,15 @@ async function displayName(tools: ActionTools, userId: string): Promise<string> 
  * sign in with that email and accept it. Inviting an address that already
  * has a pending invitation updates its role. The invitee does not need an
  * account yet.
+ *
+ * Then emails the invitee (ADR-023). The invitation stands whatever happens
+ * to the email; `emailStatus` tells the owner whether it went out.
  */
 export const inviteMember = mythosAction(
   'inviteMember',
   inviteMemberSchema,
   async ({ userId, params, tools, system }) => {
-    await requireRole(tools, userId, params.universeId, 'owner')
+    const { universe } = await requireRole(tools, userId, params.universeId, 'owner')
     const email = params.email
 
     if (email === (await callerEmail(tools, userId))) throw new UserError('You are already a member of this universe.')
@@ -97,7 +101,15 @@ export const inviteMember = mythosAction(
       subjectTitle: maskEmail(email),
       detail: params.role,
     })
-    return { invitationId, email, role: params.role, updated: existing?.data.status === 'pending' }
+
+    const emailStatus = await sendInvitationEmail(system, {
+      to: email,
+      inviterId: userId,
+      inviterName: await displayName(tools, userId),
+      universeName: universe.data.name,
+      role: params.role,
+    })
+    return { invitationId, email, role: params.role, updated: existing?.data.status === 'pending', emailStatus }
   },
 )
 

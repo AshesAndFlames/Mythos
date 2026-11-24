@@ -51,12 +51,13 @@ test('membership: invitations, roles and activity', async ({ users }) => {
 
   try {
     await test.step('the owner invites by email; nothing changes until the invitee accepts', async () => {
-      ok(await asAlice('inviteMember', { universeId: A, email: bob.email, role: 'viewer' }))
+      // Test accounts and example.com addresses are never emailed (no real mail, no spend).
+      expect(ok(await asAlice('inviteMember', { universeId: A, email: bob.email, role: 'viewer' })).emailStatus).toBe('skipped')
       // Inviting the same address again updates the pending invitation.
       expect(ok(await asAlice('inviteMember', { universeId: A, email: bob.email.toUpperCase(), role: 'editor' })).updated).toBe(true)
       ok(await asAlice('inviteMember', { universeId: A, email: carol.email, role: 'viewer' }))
       // No account is needed to be invited.
-      ok(await asAlice('inviteMember', { universeId: A, email: stranger, role: 'editor' }))
+      expect(ok(await asAlice('inviteMember', { universeId: A, email: stranger, role: 'editor' })).emailStatus).toBe('skipped')
       refused(await asAlice('inviteMember', { universeId: A, email: alice.email, role: 'editor' }), /already a member/)
       refused(await asAlice('inviteMember', { universeId: A, email: 'not-an-email', role: 'editor' }), /valid email/)
       refused(await asAlice('inviteMember', { universeId: A, email: stranger, role: 'owner' }), /Invalid|option/i)

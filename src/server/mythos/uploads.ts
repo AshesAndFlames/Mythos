@@ -16,8 +16,10 @@
 
 import type { ActionTools } from 'deepspace/worker'
 import { COLLECTIONS, COVER_KEY_PATTERN, COVER_MAX_BYTES, coverKeyUniverse, type CoverMime } from '../../domain/mythos'
-import type { UsageData } from '../../domain/records'
-import { getMembership, getUniverse, queryAll } from './store'
+import { getMembership, getUniverse } from './store'
+import { consumeDailyQuota } from './usage'
+
+export { utcDay } from './usage'
 
 export const FILES_BASE = '/api/files'
 /** Room for the multipart envelope around a cover-sized file. */
@@ -82,11 +84,6 @@ export function extensionMatches(key: string, mime: CoverMime): boolean {
   return EXTENSIONS[mime].includes(ext)
 }
 
-/** `YYYY-MM-DD` in UTC: the window the daily cap counts in. */
-export function utcDay(now: Date): string {
-  return now.toISOString().slice(0, 10)
-}
-
 export class UploadRefused extends Error {
   constructor(
     readonly status: 403 | 409 | 429,
@@ -113,21 +110,7 @@ export async function authorizeCoverUpload(system: ActionTools, userId: string, 
 
 /** Counts one upload against the caller's daily cap, refusing past it. */
 export async function countCoverUpload(system: ActionTools, userId: string, now = new Date()): Promise<void> {
-  const day = utcDay(now)
-  const where = { userId, day, kind: 'upload' }
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const [row] = await queryAll<UsageData>(system, COLLECTIONS.usage, { where })
-    const count = row?.data.count ?? 0
-    if (count >= COVER_UPLOADS_PER_DAY) {
-      throw new UploadRefused(429, `You can upload at most ${COVER_UPLOADS_PER_DAY} cover images a day.`)
-    }
-    const res = row
-      ? await system.update(COLLECTIONS.usage, row.recordId, { count: count + 1 })
-      : await system.create(COLLECTIONS.usage, { ...where, count: 1 })
-    if (res.success) return
-    // Two first uploads of the day at once: the unique rule kept one row; count on it.
-    if (!row && res.error?.startsWith('Duplicate:')) continue
-    throw new Error(`Counting the upload failed: ${res.error ?? 'unknown error'}`)
+  if (!(await consumeDailyQuota(system, userId, 'upload', COVER_UPLOADS_PER_DAY, now))) {
+    throw new UploadRefused(429, `You can upload at most ${COVER_UPLOADS_PER_DAY} cover images a day.`)
   }
-  throw new Error('Counting the upload failed: the usage row kept changing')
 }

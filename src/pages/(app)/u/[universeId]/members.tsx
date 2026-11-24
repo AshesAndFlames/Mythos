@@ -15,6 +15,7 @@ import { ConfirmDialog } from '@/components/mythos/Dialogs'
 import { ListSkeleton } from '@/components/mythos/Skeleton'
 import { ErrorView, FormError, selectClass } from '@/components/mythos/StatusViews'
 import type { PendingInvitation } from '@/actions/members'
+import { inviteEmailNotice, type InviteEmailStatus } from '@/domain/invitations'
 import { ASSIGNABLE_ROLES, type AssignableRole } from '@/domain/mythos'
 import { useUniverseContext } from '@/features/universes/context'
 import { useMembers, type MemberView } from '@/features/universes/hooks'
@@ -42,7 +43,7 @@ export default function UniverseMembersPage() {
       </header>
       <MembersSection />
       {isOwner && (
-        <Section title="Invite collaborators" description="They get access once they sign in with that email and accept.">
+        <Section title="Invite collaborators" description="We email them an invitation. They get access once they sign in with that email and accept.">
           <InviteForm onInvited={invitations.reload} />
           <PendingInvitations {...invitations} />
         </Section>
@@ -239,13 +240,20 @@ function InviteForm({ onInvited }: { onInvited: () => Promise<void> }) {
     e.preventDefault()
     setBusy(true)
     setError(null)
-    const res = await callAction<{ email: string; updated: boolean }>('inviteMember', { universeId: universe.id, email, role })
+    const res = await callAction<{ email: string; updated: boolean; emailStatus: InviteEmailStatus }>('inviteMember', {
+      universeId: universe.id,
+      email,
+      role,
+    })
     setBusy(false)
     if (!res.ok) return setError(res.error)
     setEmail('')
-    toast.success(
-      res.data.updated ? `Updated the invitation for ${res.data.email} to ${role}.` : `Invited ${res.data.email} as ${role}.`,
-    )
+    const title = res.data.updated
+      ? `Updated the invitation for ${res.data.email} to ${role}.`
+      : `Invited ${res.data.email} as ${role}.`
+    const notice = inviteEmailNotice(res.data.emailStatus)
+    if (notice.ok) toast.success(title, notice.text)
+    else toast.warning(title, notice.text)
     await onInvited()
   }
 
